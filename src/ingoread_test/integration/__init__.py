@@ -1,4 +1,5 @@
 from .base import Integration
+from .http import HttpIngoreadIntegration
 from .schemas import (
     IngoreadDocument,
     IngoreadField,
@@ -8,6 +9,7 @@ from .schemas import (
 from .stub import StubIntegration
 
 __all__ = [
+    "HttpIngoreadIntegration",
     "Integration",
     "IngoreadDocument",
     "IngoreadField",

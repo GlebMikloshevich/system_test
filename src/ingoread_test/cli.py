@@ -9,7 +9,10 @@ from pathlib import Path
 import typer
 
 from .config import IntegrationKind, load_configs
+from .config.test_config import IntegrationConfig, TestConfig
 from .dataset import load_dataset
+from .integration.base import Integration
+from .integration.http import HttpIngoreadIntegration
 from .integration.stub import StubIntegration
 from .modules import JsonFileSink, compare_to_previous, render_html, run_test, score
 from .results.models import ComparativeStatus, MeasurementsResult
@@ -22,10 +25,20 @@ def _root() -> None:
     """Keep this as a multi-command app so 'run' stays a subcommand."""
 
 
-def _build_integration(kind: IntegrationKind, predictions_dir: Path | None):
-    if kind == IntegrationKind.STUB:
-        return StubIntegration(predictions_dir=predictions_dir)
-    raise NotImplementedError(f"Integration kind {kind} not implemented in v1")
+def _build_integration(test_cfg: TestConfig) -> Integration:
+    cfg: IntegrationConfig = test_cfg.integration
+    if cfg.kind == IntegrationKind.STUB:
+        return StubIntegration(predictions_dir=cfg.stub_predictions_dir)
+    if cfg.kind == IntegrationKind.HTTP:
+        if not cfg.url:
+            raise typer.BadParameter("integration.url is required for kind=http")
+        return HttpIngoreadIntegration(
+            base_url=cfg.url,
+            integration_name=test_cfg.integration_name,
+            auth_token=cfg.auth_token,
+            poll_interval=cfg.poll_interval,
+        )
+    raise NotImplementedError(f"Integration kind {cfg.kind} not implemented")
 
 
 @app.command()
@@ -38,11 +51,16 @@ def run(
 ) -> None:
     test_cfg, scorer_cfg = load_configs(config)
     dataset = load_dataset(test_cfg.files_root, test_cfg.manifest)
-    integration = _build_integration(
-        test_cfg.integration.kind, test_cfg.integration.stub_predictions_dir
-    )
+    integration = _build_integration(test_cfg)
 
-    predictions, stats = asyncio.run(run_test(test_cfg, integration, dataset))
+    async def _run() -> tuple:
+        try:
+            outcome = await run_test(test_cfg, integration, dataset)
+        finally:
+            await integration.aclose()
+        return outcome
+
+    predictions, stats = asyncio.run(_run())
     result = score(test_cfg, scorer_cfg, dataset, predictions, stats)
 
     sink = JsonFileSink(results_dir)
