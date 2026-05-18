@@ -17,6 +17,7 @@ class IntegrationConfig(BaseModel):
     kind: IntegrationKind = IntegrationKind.STUB
     url: str | None = None
     auth_token: str | None = None
+    poll_interval: float = 1.0
     stub_predictions_dir: Path | None = None
 
 

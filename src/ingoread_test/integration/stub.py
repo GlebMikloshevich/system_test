@@ -42,7 +42,7 @@ class StubIntegration(Integration):
         if container.filename in self.failure_filenames:
             return IngoreadFileResult(
                 filename=container.filename,
-                status=IngoreadStatus.FAILED,
+                status=IngoreadStatus.COMPLETED,
                 error="stub configured to fail",
                 time=time.perf_counter() - start,
             )
@@ -54,7 +54,7 @@ class StubIntegration(Integration):
                 docs = [IngoreadDocument.model_validate(d) for d in raw]
                 return IngoreadFileResult(
                     filename=container.filename,
-                    status=IngoreadStatus.FINISHED,
+                    status=IngoreadStatus.COMPLETED,
                     result=docs,
                     time=time.perf_counter() - start,
                 )
@@ -62,7 +62,7 @@ class StubIntegration(Integration):
         docs = [_gt_to_prediction(g) for g in container.documents]
         return IngoreadFileResult(
             filename=container.filename,
-            status=IngoreadStatus.FINISHED,
+            status=IngoreadStatus.COMPLETED,
             result=docs,
             time=time.perf_counter() - start,
         )
