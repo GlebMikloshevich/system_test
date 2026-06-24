@@ -22,7 +22,9 @@ def score_document_pair(
     if gt is None:
         return DocumentPair(prediction=prediction, matched=False, field_metrics={})
     if prediction is None:
-        field_metrics = {fc.field_name: {"matched": False} for fc in cfg.fields}
+        field_metrics = {
+            fc.field_name: {"matched": False} for fc in cfg.fields if not fc.ignore
+        }
         return DocumentPair(gt=gt, matched=False, field_metrics=field_metrics)
 
     field_metrics: dict[str, dict] = {}
@@ -30,6 +32,8 @@ def score_document_pair(
     individual_matches: list[bool] = []
 
     for fc in cfg.fields:
+        if fc.ignore:
+            continue
         scorer = FIELD_SCORERS[fc.field_type]
         gt_field = gt.fields.get(fc.field_name)
         gt_value = gt_field.gt_value if gt_field else ""

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import math
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 import jiwer
 
@@ -18,22 +19,38 @@ class FieldScoreResult:
     metrics: dict
 
 
+def _normalize_text(value: str, cfg: FieldConfig) -> str:
+    """Apply optional text normalization before exact comparison.
+
+    Off by default (exact match). Enable per-field via measurer_kwargs:
+        measurer_kwargs: {strip: true, casefold: true}
+    """
+    if cfg.measurer_kwargs.get("strip"):
+        value = value.strip()
+    if cfg.measurer_kwargs.get("casefold"):
+        value = value.casefold()
+    return value
+
+
 def select_prediction(
     predictions: list[IngoreadField], cfg: FieldConfig
 ) -> list[IngoreadField]:
     """Apply the configured selection strategy. v1 implements FIRST."""
     if cfg.selection == PredictionSelection.FIRST:
         return predictions[:1]
-    if cfg.selection == PredictionSelection.TOP_N:
-        raise NotImplementedError("PredictionSelection.TOP_N is reserved for a future version")
-    if cfg.selection == PredictionSelection.ALL:
-        raise NotImplementedError("PredictionSelection.ALL is reserved for a future version")
+    if cfg.selection in (PredictionSelection.TOP_N, PredictionSelection.ALL):
+        raise NotImplementedError(
+            f"Field {cfg.field_name!r} requested selection={cfg.selection.value!r}, "
+            "but v1 only implements 'first'. Set selection: first (or take_first: true)."
+        )
     raise ValueError(f"Unknown selection: {cfg.selection}")
 
 
 def _text_score(gt: str, predictions: list[IngoreadField], cfg: FieldConfig) -> FieldScoreResult:
     chosen = select_prediction(predictions, cfg)
     pred = (chosen[0].text or "") if chosen else ""
+    gt = _normalize_text(gt, cfg)
+    pred = _normalize_text(pred, cfg)
     if not gt and not pred:
         return FieldScoreResult(matched=True, metrics={"cer": 0.0, "wer": 0.0})
     cer = float(jiwer.cer(gt, pred)) if gt else (0.0 if not pred else 1.0)
@@ -60,8 +77,12 @@ def _number_score(gt: str, predictions: list[IngoreadField], cfg: FieldConfig) -
     except ValueError:
         return FieldScoreResult(matched=False, metrics={"mae": float("inf"), "mse": float("inf")})
     diff = pred_val - gt_val
+    # Exact match by default; opt into tolerance via measurer_kwargs: {abs_tol, rel_tol}.
+    abs_tol = float(cfg.measurer_kwargs.get("abs_tol", 0.0))
+    rel_tol = float(cfg.measurer_kwargs.get("rel_tol", 0.0))
+    matched = math.isclose(pred_val, gt_val, abs_tol=abs_tol, rel_tol=rel_tol)
     return FieldScoreResult(
-        matched=gt_val == pred_val,
+        matched=matched,
         metrics={"mae": abs(diff), "mse": diff * diff},
     )
 
@@ -71,7 +92,7 @@ def _literal_score(
 ) -> FieldScoreResult:
     chosen = select_prediction(predictions, cfg)
     pred = (chosen[0].text or "") if chosen else ""
-    matched = pred == gt
+    matched = _normalize_text(pred, cfg) == _normalize_text(gt, cfg)
     return FieldScoreResult(matched=matched, metrics={"accuracy": 1.0 if matched else 0.0})
 
 

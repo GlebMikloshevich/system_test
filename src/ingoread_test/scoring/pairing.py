@@ -20,8 +20,17 @@ from ..results.models import DocumentPair
 from .document_scorer import score_document_pair
 
 
+def _valid_bbox(bbox: list[float] | None) -> bool:
+    return bbox is not None and len(bbox) == 4
+
+
 def _all_have_bbox(gts: list[DocumentGT], preds: list[IngoreadDocument]) -> bool:
-    return all(g.bbox is not None for g in gts) and all(p.bbox is not None for p in preds)
+    """True only if every doc carries a usable 4-element bbox.
+
+    Length is validated here so the IoU path can unpack safely; a doc with a
+    malformed bbox falls back to field-content cost instead of crashing.
+    """
+    return all(_valid_bbox(g.bbox) for g in gts) and all(_valid_bbox(p.bbox) for p in preds)
 
 
 def _iou(a: list[float], b: list[float]) -> float:
@@ -64,6 +73,7 @@ def _pair_within_group(
     for i, g in enumerate(gts):
         for j, p in enumerate(preds):
             if use_iou:
+                assert g.bbox is not None and p.bbox is not None  # guaranteed by _all_have_bbox
                 cost[i, j] = 1.0 - _iou(g.bbox, p.bbox)
             else:
                 pair = score_document_pair(g, p, cfg)
@@ -76,7 +86,7 @@ def _pair_within_group(
     matched_gts: set[int] = set()
     matched_preds: set[int] = set()
     pairs: list[DocumentPair] = []
-    for i, j in zip(row_ind, col_ind):
+    for i, j in zip(row_ind, col_ind, strict=True):
         matched_gts.add(int(i))
         matched_preds.add(int(j))
         pair = pair_cache.get((int(i), int(j))) or score_document_pair(gts[i], preds[j], cfg)

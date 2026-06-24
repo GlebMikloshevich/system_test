@@ -36,9 +36,13 @@ class FieldConfig(BaseModel):
     top_n: int | None = None
     field_group: str | None = None
     take_first: bool | None = None
+    # When true the field is not scored at all: it doesn't contribute to the
+    # document match, isn't aggregated, and isn't reported. Use to keep a field
+    # documented in the config while excluding noisy/not-yet-supported fields.
+    ignore: bool = False
 
     @model_validator(mode="after")
-    def _coerce_take_first(self) -> "FieldConfig":
+    def _coerce_take_first(self) -> FieldConfig:
         if self.take_first is None:
             return self
         # Legacy alias: take_first=True == FIRST; False == ALL.

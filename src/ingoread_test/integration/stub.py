@@ -42,7 +42,7 @@ class StubIntegration(Integration):
         if container.filename in self.failure_filenames:
             return IngoreadFileResult(
                 filename=container.filename,
-                status=IngoreadStatus.COMPLETED,
+                status=IngoreadStatus.FAILED,
                 error="stub configured to fail",
                 time=time.perf_counter() - start,
             )
@@ -68,9 +68,28 @@ class StubIntegration(Integration):
         )
 
 
+def _parse_bbox(value: str) -> list[float] | None:
+    """Return a 4-element bbox if `value` looks like one, else None.
+
+    Lets the echo stub satisfy bbox-typed field scorers (which read .bbox, not
+    .text) so its "every field matches" contract holds for those fields too.
+    """
+    try:
+        parts = [float(x) for x in value.strip("[]").split(",")]
+    except (ValueError, AttributeError):
+        return None
+    return parts if len(parts) == 4 else None
+
+
 def _gt_to_prediction(gt) -> IngoreadDocument:
     fields = {
-        name: [IngoreadField(text=f.gt_value, text_confidence=1.0)]
+        name: [
+            IngoreadField(
+                text=f.gt_value,
+                text_confidence=1.0,
+                bbox=_parse_bbox(f.gt_value),
+            )
+        ]
         for name, f in gt.fields.items()
     }
     return IngoreadDocument(

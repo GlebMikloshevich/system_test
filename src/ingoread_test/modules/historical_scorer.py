@@ -43,3 +43,34 @@ def compare_to_previous(
         per_label_delta=per_label,
         notes=notes,
     )
+
+
+def evaluate_release_gate(
+    result: MeasurementsResult,
+    comparison: ComparativeResult | None,
+    cfg: HistoryConfig,
+) -> tuple[bool, list[str]]:
+    """Decide whether this run may be published to production.
+
+    Returns ``(blocked, reasons)``. A release is allowed only when metrics are
+    not worse than the baseline AND no document errored — so the gate blocks on
+    any enabled condition, with or without a `--previous` baseline.
+    """
+    reasons: list[str] = []
+
+    if cfg.fail_on_error and (result.failed or result.timeouts):
+        reasons.append(
+            f"errors present (failed={result.failed}, timeouts={result.timeouts})"
+        )
+
+    if cfg.fail_on_empty and not result.document_results:
+        reasons.append("no documents were scored — nothing to validate")
+
+    if (
+        comparison is not None
+        and cfg.fail_on_regression
+        and comparison.status == ComparativeStatus.DEGRADED
+    ):
+        reasons.append(f"metrics regressed vs previous ({'; '.join(comparison.notes)})")
+
+    return bool(reasons), reasons

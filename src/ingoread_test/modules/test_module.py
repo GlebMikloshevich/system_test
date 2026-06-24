@@ -43,7 +43,7 @@ async def run_test(
                     integration.predict(container, kwargs=cfg.kwargs),
                     timeout=cfg.timeout,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 timeouts += 1
                 result = IngoreadFileResult(
                     filename=container.filename,

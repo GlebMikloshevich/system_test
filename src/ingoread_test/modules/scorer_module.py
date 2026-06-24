@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from ..config.scorer_config import DocumentMeasurerConfig, FieldType, ScorerConfig
 from ..config.test_config import TestConfig
 from ..dataset.models import Dataset
-from ..integration.schemas import IngoreadFileResult
+from ..integration.schemas import IngoreadFileResult, IngoreadStatus
 from ..results.models import (
     DocumentContainerPair,
     DocumentMeasurement,
@@ -18,6 +19,8 @@ from ..results.models import (
 )
 from ..scoring.pairing import pair_documents
 from .test_module import TestRunStats
+
+logger = logging.getLogger(__name__)
 
 
 def _cfg_by_label(scorer_cfg: ScorerConfig) -> dict[str, DocumentMeasurerConfig]:
@@ -63,13 +66,22 @@ def score(
     cfg_map = _cfg_by_label(scorer_cfg)
     container_pairs: list[DocumentContainerPair] = []
     pairs_by_label: dict[str, list[DocumentPair]] = defaultdict(list)
+    seen_gt_labels: set[str] = set()
+    seen_pred_labels: set[str] = set()
 
+    empty_pred_files: list[str] = []
     for container in dataset.containers:
         pred = predictions.get(container.filename)
         if pred is None:
             continue
+        if not pred.result and pred.status != IngoreadStatus.FAILED:
+            empty_pred_files.append(container.filename)
         file_pairs: list[DocumentPair] = []
-        labels = {g.doc_label for g in container.documents} | {p.label for p in pred.result}
+        gt_labels = {g.doc_label for g in container.documents}
+        pred_labels = {p.label for p in pred.result}
+        seen_gt_labels |= gt_labels
+        seen_pred_labels |= pred_labels
+        labels = gt_labels | pred_labels
         for label in sorted(labels):
             doc_cfg = cfg_map.get(label)
             if doc_cfg is None:
@@ -86,12 +98,46 @@ def score(
             )
         )
 
+    cfg_labels = set(cfg_map)
+    unconfigured_gt = seen_gt_labels - cfg_labels
+    unconfigured_pred = seen_pred_labels - cfg_labels
+    unused_cfg = cfg_labels - seen_gt_labels - seen_pred_labels
+    if unconfigured_gt:
+        logger.warning(
+            "GT doc_labels with no matching scorer config (will not be scored): %s",
+            sorted(unconfigured_gt),
+        )
+    if unconfigured_pred:
+        logger.warning(
+            "Predicted labels with no matching scorer config (will not be scored): %s. "
+            "Scorer configs were registered for: %s",
+            sorted(unconfigured_pred),
+            sorted(cfg_labels),
+        )
+    if unused_cfg:
+        logger.warning(
+            "Scorer configs that never matched any GT or prediction: %s",
+            sorted(unused_cfg),
+        )
+    if empty_pred_files:
+        logger.warning(
+            "%d file(s) returned status=COMPLETED with an EMPTY result list "
+            "(no documents to score). Examples: %s. "
+            "Likely cause: the API response body didn't expose its document list "
+            "under the 'result' key — check HttpIngoreadIntegration's parsing "
+            "in src/ingoread_test/integration/http.py against your real payload.",
+            len(empty_pred_files),
+            empty_pred_files[:5],
+        )
+
     document_results: list[DocumentMeasurement] = []
     overall_matches: list[bool] = []
     for label, pairs in sorted(pairs_by_label.items()):
         doc_cfg = cfg_map[label]
         field_results: list[FieldMeasurement] = [
-            _field_measurement(fc.field_name, fc.field_type, pairs) for fc in doc_cfg.fields
+            _field_measurement(fc.field_name, fc.field_type, pairs)
+            for fc in doc_cfg.fields
+            if not fc.ignore
         ]
         matches = [p.matched for p in pairs]
         overall_matches.extend(matches)
@@ -109,7 +155,7 @@ def score(
     return MeasurementsResult(
         test_config_name=test_cfg.name,
         scorer_config_name=scorer_cfg.name,
-        start_date=datetime.now(timezone.utc),
+        start_date=datetime.now(UTC),
         total_time=test_stats.total_time,
         total_samples=test_stats.total_samples,
         time_per_sample=test_stats.time_per_sample,

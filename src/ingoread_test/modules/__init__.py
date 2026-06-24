@@ -1,4 +1,4 @@
-from .historical_scorer import compare_to_previous
+from .historical_scorer import compare_to_previous, evaluate_release_gate
 from .logger_module import JsonFileSink, Sink
 from .scorer_module import score
 from .test_module import run_test
@@ -8,6 +8,7 @@ __all__ = [
     "JsonFileSink",
     "Sink",
     "compare_to_previous",
+    "evaluate_release_gate",
     "render_html",
     "run_test",
     "score",

@@ -33,8 +33,21 @@ def load_configs(path: Path) -> tuple[TestConfig, ScorerConfig]:
     text = path.read_text(encoding="utf-8")
     raw = yaml.safe_load(text) if path.suffix in {".yaml", ".yml"} else json.loads(text)
 
-    if "test" not in raw or "scorer" not in raw:
-        raise ValueError(f"Config {path} must contain top-level 'test' and 'scorer' keys")
+    if not isinstance(raw, dict):
+        raise ValueError(
+            f"Config {path} must be a mapping with 'test' and 'scorer' keys; "
+            f"got top-level type {type(raw).__name__}"
+        )
+
+    missing = [k for k in ("test", "scorer") if k not in raw]
+    if missing:
+        raise ValueError(
+            f"Config {path} is missing top-level key(s) {missing}. "
+            f"Found keys: {sorted(raw)}. Expected layout:\n"
+            "  test:\n    name: ...\n    files_root: ...\n    manifest: ...\n"
+            "  scorer:\n    measurement_configs:\n      - doc_label: ...\n"
+            "        fields: [...]"
+        )
 
     test_cfg = TestConfig.model_validate(raw["test"])
     scorer_cfg = ScorerConfig.model_validate(raw["scorer"])
