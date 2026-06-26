@@ -63,11 +63,14 @@ def gt_to_boxes(value: Any) -> list[list[float]]:
 
 
 class FieldGT(BaseModel):
-    # Stored in its native YAML form — str, number, bool, a bbox list, or a list
-    # of bbox lists. Scorers read it via gt_to_text() / gt_to_boxes(); no lossy
-    # intermediate string is built.
+    # The ground-truth value, in its native YAML form — str, number, bool, a bbox
+    # list, or a list of bbox lists. Scorers read it via gt_to_text() /
+    # gt_to_boxes(); no lossy intermediate string is built.
+    #
+    # Scoring policy (field_type, tolerances, iou_threshold, ...) lives on the
+    # scorer-config FieldConfig, not here: the dataset holds values, the scorer
+    # holds the schema.
     gt_value: Any
-    measurer_kwargs: dict = Field(default_factory=dict)
 
 
 class DocumentGT(BaseModel):
