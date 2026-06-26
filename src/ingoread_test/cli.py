@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 import typer
+import yaml
 
 from .config import IntegrationKind, load_configs
 from .config.test_config import IntegrationConfig, TestConfig
@@ -93,17 +94,25 @@ def run(
             "and ingoread responses."
         )
 
+    prev_result = None
+    if previous and not no_history:
+        prev_result = MeasurementsResult.model_validate_json(previous.read_text(encoding="utf-8"))
+
     sink = JsonFileSink(results_dir)
     json_path = sink.write(result)
     typer.echo(f"results_json={json_path.resolve()}")
 
     if not no_viz:
-        html_path = render_html(result, results_dir)
+        html_path = render_html(
+            result,
+            results_dir,
+            previous=prev_result,
+            tolerance=test_cfg.history.match_rate_tolerance,
+        )
         typer.echo(f"results_html={html_path.resolve()}")
 
     comparison = None
-    if previous and not no_history:
-        prev_result = MeasurementsResult.model_validate_json(previous.read_text(encoding="utf-8"))
+    if prev_result is not None:
         comparison = compare_to_previous(result, prev_result, test_cfg.history)
         typer.echo(f"history_status={comparison.status.value}")
         typer.echo(f"history_delta={comparison.overall_delta:+.4f}")
