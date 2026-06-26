@@ -107,7 +107,7 @@ class HttpIngoreadIntegration(Integration):
         files = {"file": (container.filename, Path(container.file_path).read_bytes())}
         data = self._build_data(merged_kwargs)
 
-        url = f"{self.base_url}/integrations/{self.integration_name}"
+        url = f"{self.base_url}/api/integrations/{self.integration_name}"
         response = await self._client.post(url, files=files, data=data)
         response.raise_for_status()
         body = response.json()
@@ -135,7 +135,7 @@ class HttpIngoreadIntegration(Integration):
         }
 
     async def _poll_until_terminal(self, task_id: str) -> dict:
-        url = f"{self.base_url}/status/{task_id}"
+        url = f"{self.base_url}/api/status/{task_id}"
         deadline = (
             time.perf_counter() + self.poll_timeout
             if self.poll_timeout is not None
