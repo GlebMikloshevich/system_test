@@ -13,7 +13,7 @@ import json
 import time
 from pathlib import Path
 
-from ..dataset.models import DocumentContainer
+from ..dataset.models import DocumentContainer, gt_to_text
 from .base import Integration
 from .schemas import IngoreadDocument, IngoreadField, IngoreadFileResult, IngoreadStatus
 
@@ -81,17 +81,42 @@ def _parse_bbox(value: str) -> list[float] | None:
     return parts if len(parts) == 4 else None
 
 
+def _parse_box_list(value: str) -> list[list[float]] | None:
+    """Return >1 boxes for a multi-box GT (``"x1,y1,x2,y2; x1,y1,x2,y2"``).
+
+    None when the value isn't a multi-box string, so single-bbox/text fields
+    keep their existing echo behavior.
+    """
+    if ";" not in value:
+        return None
+    boxes: list[list[float]] = []
+    for chunk in value.split(";"):
+        box = _parse_bbox(chunk)
+        if box is not None:
+            boxes.append(box)
+    return boxes or None
+
+
+def _echo_field(value) -> list[IngoreadField]:
+    """Turn one GT value into the predicted field(s) the scorers expect."""
+    # Native bbox / bbox_set lists are unambiguous: emit one box per GT box.
+    if isinstance(value, (list, tuple)) and value:
+        if isinstance(value[0], (list, tuple)):  # list of boxes (bbox_set)
+            return [IngoreadField(bbox=[float(x) for x in b], bbox_confidence=1.0) for b in value]
+        if len(value) == 4:  # single box (bbox)
+            return [IngoreadField(bbox=[float(x) for x in value], bbox_confidence=1.0)]
+    if isinstance(value, str):
+        boxes = _parse_box_list(value)  # ";"-separated string -> multiple boxes
+        if boxes is not None:
+            return [IngoreadField(bbox=box, bbox_confidence=1.0) for box in boxes]
+        # A bare "x,y,x,y" string is ambiguous (text or bbox) — echo both.
+        return [IngoreadField(text=value, text_confidence=1.0, bbox=_parse_bbox(value))]
+    # number / bool scalar
+    return [IngoreadField(text=gt_to_text(value), text_confidence=1.0)]
+
+
 def _gt_to_prediction(gt) -> IngoreadDocument:
-    fields = {
-        name: [
-            IngoreadField(
-                text=f.gt_value,
-                text_confidence=1.0,
-                bbox=_parse_bbox(f.gt_value),
-            )
-        ]
-        for name, f in gt.fields.items()
-    }
+    fields = {name: _echo_field(f.gt_value) for name, f in gt.fields.items()}
     return IngoreadDocument(
         label=gt.doc_label,
         page=gt.page,

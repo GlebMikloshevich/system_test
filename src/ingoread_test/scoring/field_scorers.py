@@ -6,10 +6,14 @@ import math
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 import jiwer
+import numpy as np
+from scipy.optimize import linear_sum_assignment
 
 from ..config.scorer_config import FieldConfig, FieldType, PredictionSelection
+from ..dataset.models import gt_to_boxes, gt_to_text
 from ..integration.schemas import IngoreadField
 
 
@@ -46,10 +50,10 @@ def select_prediction(
     raise ValueError(f"Unknown selection: {cfg.selection}")
 
 
-def _text_score(gt: str, predictions: list[IngoreadField], cfg: FieldConfig) -> FieldScoreResult:
+def _text_score(gt: Any, predictions: list[IngoreadField], cfg: FieldConfig) -> FieldScoreResult:
     chosen = select_prediction(predictions, cfg)
     pred = (chosen[0].text or "") if chosen else ""
-    gt = _normalize_text(gt, cfg)
+    gt = _normalize_text(gt_to_text(gt), cfg)
     pred = _normalize_text(pred, cfg)
     if not gt and not pred:
         return FieldScoreResult(matched=True, metrics={"cer": 0.0, "wer": 0.0})
@@ -59,22 +63,25 @@ def _text_score(gt: str, predictions: list[IngoreadField], cfg: FieldConfig) -> 
     return FieldScoreResult(matched=matched, metrics={"cer": cer, "wer": wer})
 
 
-def _bool_score(gt: str, predictions: list[IngoreadField], cfg: FieldConfig) -> FieldScoreResult:
+_TRUTHY = {"true", "1", "yes", "y", "да"}
+
+
+def _bool_score(gt: Any, predictions: list[IngoreadField], cfg: FieldConfig) -> FieldScoreResult:
     chosen = select_prediction(predictions, cfg)
     raw = (chosen[0].text or "") if chosen else ""
-    pred = raw.strip().lower() in {"true", "1", "yes", "y", "да"}
-    gt_bool = gt.strip().lower() in {"true", "1", "yes", "y", "да"}
+    pred = raw.strip().lower() in _TRUTHY
+    gt_bool = gt if isinstance(gt, bool) else gt_to_text(gt).strip().lower() in _TRUTHY
     matched = pred == gt_bool
     return FieldScoreResult(matched=matched, metrics={"accuracy": 1.0 if matched else 0.0})
 
 
-def _number_score(gt: str, predictions: list[IngoreadField], cfg: FieldConfig) -> FieldScoreResult:
+def _number_score(gt: Any, predictions: list[IngoreadField], cfg: FieldConfig) -> FieldScoreResult:
     chosen = select_prediction(predictions, cfg)
     raw = (chosen[0].text or "") if chosen else ""
     try:
         gt_val = float(gt)
         pred_val = float(raw)
-    except ValueError:
+    except (TypeError, ValueError):
         return FieldScoreResult(matched=False, metrics={"mae": float("inf"), "mse": float("inf")})
     diff = pred_val - gt_val
     # Exact match by default; opt into tolerance via measurer_kwargs: {abs_tol, rel_tol}.
@@ -88,11 +95,11 @@ def _number_score(gt: str, predictions: list[IngoreadField], cfg: FieldConfig) -
 
 
 def _literal_score(
-    gt: str, predictions: list[IngoreadField], cfg: FieldConfig
+    gt: Any, predictions: list[IngoreadField], cfg: FieldConfig
 ) -> FieldScoreResult:
     chosen = select_prediction(predictions, cfg)
     pred = (chosen[0].text or "") if chosen else ""
-    matched = _normalize_text(pred, cfg) == _normalize_text(gt, cfg)
+    matched = _normalize_text(pred, cfg) == _normalize_text(gt_to_text(gt), cfg)
     return FieldScoreResult(matched=matched, metrics={"accuracy": 1.0 if matched else 0.0})
 
 
@@ -108,22 +115,83 @@ def _iou(a: list[float], b: list[float]) -> float:
     return inter / union if union > 0 else 0.0
 
 
-def _bbox_score(gt: str, predictions: list[IngoreadField], cfg: FieldConfig) -> FieldScoreResult:
+def _bbox_score(gt: Any, predictions: list[IngoreadField], cfg: FieldConfig) -> FieldScoreResult:
     chosen = select_prediction(predictions, cfg)
     pred_bbox = chosen[0].bbox if chosen else None
-    try:
-        gt_bbox = [float(x) for x in gt.strip("[]").split(",")]
-    except ValueError:
-        return FieldScoreResult(matched=False, metrics={"iou": 0.0})
-    if pred_bbox is None or len(pred_bbox) != 4 or len(gt_bbox) != 4:
+    gt_boxes = gt_to_boxes(gt)
+    gt_bbox = gt_boxes[0] if gt_boxes else None
+    if pred_bbox is None or gt_bbox is None or len(pred_bbox) != 4:
         return FieldScoreResult(matched=False, metrics={"iou": 0.0})
     iou = _iou(gt_bbox, pred_bbox)
     threshold = float(cfg.measurer_kwargs.get("iou_threshold", 0.5))
     return FieldScoreResult(matched=iou >= threshold, metrics={"iou": iou})
 
 
+def _matched_ious(gt_boxes: list[list[float]], pred_boxes: list[list[float]]) -> list[float]:
+    """IoU of the best one-to-one assignment between GT and predicted boxes.
+
+    Returns one IoU per assigned pair (``min(len(gt), len(pred))`` of them),
+    chosen by the Hungarian algorithm to maximize total overlap.
+    """
+    if not gt_boxes or not pred_boxes:
+        return []
+    cost = np.ones((len(gt_boxes), len(pred_boxes)), dtype=float)
+    for i, g in enumerate(gt_boxes):
+        for j, p in enumerate(pred_boxes):
+            cost[i, j] = 1.0 - _iou(g, p)
+    rows, cols = linear_sum_assignment(cost)
+    return [_iou(gt_boxes[i], pred_boxes[j]) for i, j in zip(rows, cols, strict=True)]
+
+
+def _bbox_set_score(
+    gt: Any, predictions: list[IngoreadField], cfg: FieldConfig
+) -> FieldScoreResult:
+    """Score a field that holds *several* boxes (e.g. two stamps).
+
+    Uses ALL predicted boxes (not just the first), matches them one-to-one to
+    the GT boxes by IoU, and reports presence/count/localization together:
+
+    - ``matched`` — every GT box was found (count is exact AND each matched pair
+      clears ``iou_threshold``). This is the strict "both stamps present and
+      well-localized" signal.
+    - metrics: ``iou`` (mean over matched pairs), ``count_gt``, ``count_pred``,
+      ``count_match``, ``precision``, ``recall``.
+    """
+    gt_boxes = gt_to_boxes(gt)
+    pred_boxes = [p.bbox for p in predictions if p.bbox is not None and len(p.bbox) == 4]
+    threshold = float(cfg.measurer_kwargs.get("iou_threshold", 0.5))
+
+    n_gt, n_pred = len(gt_boxes), len(pred_boxes)
+    ious = _matched_ious(gt_boxes, pred_boxes)
+    found = sum(1 for v in ious if v >= threshold)  # true positives at threshold
+    mean_iou = sum(ious) / len(ious) if ious else 0.0
+    count_match = n_gt == n_pred
+
+    if n_gt == 0:
+        # No boxes expected: correct only if none predicted.
+        matched = n_pred == 0
+        precision = 1.0 if n_pred == 0 else 0.0
+        recall = 1.0
+    else:
+        matched = count_match and found == n_gt
+        precision = found / n_pred if n_pred else 0.0
+        recall = found / n_gt
+
+    return FieldScoreResult(
+        matched=matched,
+        metrics={
+            "iou": mean_iou,
+            "count_gt": float(n_gt),
+            "count_pred": float(n_pred),
+            "count_match": 1.0 if count_match else 0.0,
+            "precision": precision,
+            "recall": recall,
+        },
+    )
+
+
 def _llm_text_score(
-    gt: str, predictions: list[IngoreadField], cfg: FieldConfig
+    gt: Any, predictions: list[IngoreadField], cfg: FieldConfig
 ) -> FieldScoreResult:
     if not os.environ.get("LLM_JUDGE_URL"):
         raise NotImplementedError(
@@ -132,7 +200,7 @@ def _llm_text_score(
     return _text_score(gt, predictions, cfg)
 
 
-FieldScorerFn = Callable[[str, list[IngoreadField], FieldConfig], FieldScoreResult]
+FieldScorerFn = Callable[[Any, list[IngoreadField], FieldConfig], FieldScoreResult]
 
 FIELD_SCORERS: dict[FieldType, FieldScorerFn] = {
     FieldType.TEXT: _text_score,
@@ -140,5 +208,6 @@ FIELD_SCORERS: dict[FieldType, FieldScorerFn] = {
     FieldType.NUMBER: _number_score,
     FieldType.LITERAL: _literal_score,
     FieldType.BBOX: _bbox_score,
+    FieldType.BBOX_SET: _bbox_set_score,
     FieldType.LLM_TEXT: _llm_text_score,
 }

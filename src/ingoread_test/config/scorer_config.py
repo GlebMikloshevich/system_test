@@ -13,6 +13,7 @@ class FieldType(str, Enum):
     BOOL = "bool"
     LLM_TEXT = "llm_text"
     BBOX = "bbox"
+    BBOX_SET = "bbox_set"  # a field holding multiple boxes (e.g. stamps), set-to-set IoU
     LITERAL = "literal"
 
 
