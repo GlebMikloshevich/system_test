@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 class IntegrationKind(str, Enum):
     STUB = "stub"
     HTTP = "http"
+    STRING = "string"  # HTTP, but the input is in kwargs only — no file is sent
 
 
 class IntegrationConfig(BaseModel):
