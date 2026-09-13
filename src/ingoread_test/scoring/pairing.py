@@ -1,23 +1,28 @@
-"""Hungarian pairing between ground-truth and predicted documents.
+"""Pair ground-truth and predicted documents with stickler's Hungarian matcher.
 
-The diagram says: when |gt| != |pred|, pair every-with-every and use the
-Hungarian algorithm to minimize the cost (1 - match_rate, or 1 - IoU when
-all candidates have bboxes). Unmatched gts and preds are kept as
-half-pairs so they show up in the final report.
+When a file holds several documents of the same type, which prediction answers
+which ground truth is itself a matching problem: score every gt against every
+prediction and take the assignment that maximizes total similarity. Similarity
+comes from `StructuredModelComparator` (the whole document, field by field), or
+from `BBoxIoUComparator` when every document carries a page box — then position
+on the page is the more reliable signal. Unmatched gts and predictions are kept
+as half pairs so they still show up in the report.
 """
 
 from __future__ import annotations
 
 from itertools import groupby
 
-import numpy as np
-from scipy.optimize import linear_sum_assignment
+from stickler import BBoxIoUComparator, StructuredModel, StructuredModelComparator
+from stickler.algorithms.hungarian import HungarianMatcher
 
 from ..config.scorer_config import DocumentMeasurerConfig
 from ..dataset.models import DocumentGT
 from ..integration.schemas import IngoreadDocument
 from ..results.models import DocumentPair
-from .document_scorer import score_document_pair
+from .adapters import empty_model, gt_to_model, prediction_to_model
+from .evaluator import build_pair, compare_models
+from .models import build_document_model, scored_fields
 
 
 def _valid_bbox(bbox: list[float] | None) -> bool:
@@ -27,22 +32,10 @@ def _valid_bbox(bbox: list[float] | None) -> bool:
 def _all_have_bbox(gts: list[DocumentGT], preds: list[IngoreadDocument]) -> bool:
     """True only if every doc carries a usable 4-element bbox.
 
-    Length is validated here so the IoU path can unpack safely; a doc with a
-    malformed bbox falls back to field-content cost instead of crashing.
+    Length is validated here so the IoU path can't be handed a malformed box; a
+    doc with one falls back to whole-document similarity instead.
     """
     return all(_valid_bbox(g.bbox) for g in gts) and all(_valid_bbox(p.bbox) for p in preds)
-
-
-def _iou(a: list[float], b: list[float]) -> float:
-    ax1, ay1, ax2, ay2 = a
-    bx1, by1, bx2, by2 = b
-    inter_w = max(0.0, min(ax2, bx2) - max(ax1, bx1))
-    inter_h = max(0.0, min(ay2, by2) - max(ay1, by1))
-    inter = inter_w * inter_h
-    area_a = max(0.0, ax2 - ax1) * max(0.0, ay2 - ay1)
-    area_b = max(0.0, bx2 - bx1) * max(0.0, by2 - by1)
-    union = area_a + area_b - inter
-    return inter / union if union > 0 else 0.0
 
 
 def _group_key(doc, multipage: bool) -> tuple:
@@ -52,6 +45,25 @@ def _group_key(doc, multipage: bool) -> tuple:
     return (getattr(doc, "page", 0),)
 
 
+def _assign(
+    gts: list[DocumentGT],
+    preds: list[IngoreadDocument],
+    gt_models: list[StructuredModel],
+    pred_models: list[StructuredModel],
+    cfg: DocumentMeasurerConfig,
+) -> tuple[list[tuple[int, int]], list[list[float]]]:
+    """Optimal (gt index, prediction index) assignment plus its similarity matrix."""
+    if _all_have_bbox(gts, preds):
+        comparator = BBoxIoUComparator(threshold=cfg.match_threshold)
+        left, right = [g.bbox for g in gts], [p.bbox for p in preds]
+    else:
+        comparator = StructuredModelComparator(threshold=cfg.match_threshold)
+        left, right = gt_models, pred_models
+    matcher = HungarianMatcher(comparator=comparator, match_threshold=cfg.match_threshold)
+    indices, similarity = matcher.match(left, right)
+    return [(int(i), int(j)) for i, j in indices], similarity.tolist()
+
+
 def _pair_within_group(
     gts: list[DocumentGT],
     preds: list[IngoreadDocument],
@@ -59,45 +71,62 @@ def _pair_within_group(
 ) -> list[DocumentPair]:
     if not gts and not preds:
         return []
+
+    cfg_fields = scored_fields(cfg)
+    model = build_document_model(cfg)
+    blank = empty_model(cfg_fields, model)
+    gt_models = [gt_to_model(g, cfg_fields, model) for g in gts]
+    pred_models = [prediction_to_model(p, cfg_fields, model) for p in preds]
+
+    def missed(index: int) -> DocumentPair:
+        """A ground truth no prediction answered."""
+        return build_pair(
+            gts[index],
+            None,
+            cfg_fields,
+            compare_models(gt_models[index], blank),
+            forced_miss=True,
+        )
+
+    def invented(index: int) -> DocumentPair:
+        """A predicted document no ground truth asked for."""
+        return build_pair(
+            None,
+            preds[index],
+            cfg_fields,
+            compare_models(blank, pred_models[index]),
+            forced_miss=True,
+        )
+
     if not preds:
-        return [score_document_pair(g, None, cfg) for g in gts]
+        return [missed(i) for i in range(len(gts))]
     if not gts:
-        return [score_document_pair(None, p, cfg) for p in preds]
-    if len(gts) == 1 and len(preds) == 1:
-        return [score_document_pair(gts[0], preds[0], cfg)]
+        return [invented(j) for j in range(len(preds))]
 
-    n, m = len(gts), len(preds)
-    use_iou = _all_have_bbox(gts, preds)
-    cost = np.ones((n, m), dtype=float)
-    pair_cache: dict[tuple[int, int], DocumentPair] = {}
-    for i, g in enumerate(gts):
-        for j, p in enumerate(preds):
-            if use_iou:
-                assert g.bbox is not None and p.bbox is not None  # guaranteed by _all_have_bbox
-                cost[i, j] = 1.0 - _iou(g.bbox, p.bbox)
-            else:
-                pair = score_document_pair(g, p, cfg)
-                pair_cache[(i, j)] = pair
-                cost[i, j] = 1.0 - pair.document_param_metrics.get(
-                    "fraction_fields_matched", 0.0
-                )
+    assignment, similarity = _assign(gts, preds, gt_models, pred_models, cfg)
 
-    row_ind, col_ind = linear_sum_assignment(cost)
+    pairs: list[DocumentPair] = []
     matched_gts: set[int] = set()
     matched_preds: set[int] = set()
-    pairs: list[DocumentPair] = []
-    for i, j in zip(row_ind, col_ind, strict=True):
-        matched_gts.add(int(i))
-        matched_preds.add(int(j))
-        pair = pair_cache.get((int(i), int(j))) or score_document_pair(gts[i], preds[j], cfg)
-        pairs.append(pair)
+    for i, j in assignment:
+        if cfg.split_below_match_threshold and similarity[i][j] < cfg.match_threshold:
+            # Too dissimilar to be the same document: report the gt as missed
+            # and the prediction as invented, rather than as one bad pair.
+            continue
+        matched_gts.add(i)
+        matched_preds.add(j)
+        pairs.append(
+            build_pair(
+                gts[i],
+                preds[j],
+                cfg_fields,
+                compare_models(gt_models[i], pred_models[j]),
+                forced_miss=False,
+            )
+        )
 
-    for i, g in enumerate(gts):
-        if i not in matched_gts:
-            pairs.append(score_document_pair(g, None, cfg))
-    for j, p in enumerate(preds):
-        if j not in matched_preds:
-            pairs.append(score_document_pair(None, p, cfg))
+    pairs.extend(missed(i) for i in range(len(gts)) if i not in matched_gts)
+    pairs.extend(invented(j) for j in range(len(preds)) if j not in matched_preds)
     return pairs
 
 

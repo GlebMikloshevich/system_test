@@ -18,6 +18,10 @@ class DocumentPair(BaseModel):
     matched: bool = False
     field_metrics: dict[str, dict] = Field(default_factory=dict)
     document_param_metrics: dict = Field(default_factory=dict)
+    # Stickler's raw compare_with() output, kept for the aggregation step only.
+    # Excluded from serialization: it restates field_metrics in full, and
+    # persisting it would multiply the size of every result file.
+    comparison: dict | None = Field(default=None, exclude=True, repr=False)
 
 
 class DocumentContainerPair(BaseModel):
@@ -31,6 +35,8 @@ class FieldMeasurement(BaseModel):
     field_name: str
     field_type: FieldType
     match_rate: float
+    # Mean stickler similarity over the pairs this field was scored in.
+    mean_score: float = 0.0
     field_metrics: dict = Field(default_factory=dict)
 
 
@@ -40,6 +46,9 @@ class DocumentMeasurement(BaseModel):
     time: float = 0.0
     time_per_sample: float = 0.0
     match_rate: float = 0.0
+    # Weighted stickler similarity across this document type — partial credit,
+    # where match_rate is the all-or-nothing view.
+    mean_score: float = 0.0
     field_results: list[FieldMeasurement] = Field(default_factory=list)
 
 
@@ -51,6 +60,7 @@ class MeasurementsResult(BaseModel):
     total_samples: int
     time_per_sample: float
     match_rate: float
+    mean_score: float = 0.0
     timeouts: int = 0
     failed: int = 0
     document_results: list[DocumentMeasurement] = Field(default_factory=list)
