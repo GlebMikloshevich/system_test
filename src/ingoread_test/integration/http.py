@@ -13,6 +13,7 @@ import asyncio
 import json
 import time
 from pathlib import Path
+from typing import Any
 
 import httpx
 
@@ -42,6 +43,7 @@ class HttpIngoreadIntegration(Integration):
         poll_interval: float = 1.0,
         poll_timeout: float | None = None,
         data_field_name: str | None = None,
+        send_file: bool = True,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         if not base_url:
@@ -51,6 +53,9 @@ class HttpIngoreadIntegration(Integration):
         self.poll_interval = poll_interval
         self.poll_timeout = poll_timeout
         self.data_field_name = data_field_name
+        # When False (the `string` kind), no file is read/sent — the input lives
+        # entirely in the container's kwargs.
+        self.send_file = send_file
         headers = {"Authorization": f"Bearer {auth_token}"} if auth_token else {}
         self._owns_client = client is None
         self._client = client or httpx.AsyncClient(headers=headers, timeout=httpx.Timeout(30.0))
@@ -83,32 +88,40 @@ class HttpIngoreadIntegration(Integration):
                 time=time.perf_counter() - start,
             )
 
-        result_body = payload.get("result", payload)
-        # Accept either a raw IngoreadFileResult dict, or just its `result` list.
-        if isinstance(result_body, list):
-            result_body = {"filename": container.filename, "result": result_body}
-        if "filename" not in result_body:
-            result_body["filename"] = container.filename
-        if "status" not in result_body:
-            result_body["status"] = status.value
-        parsed = IngoreadFileResult.model_validate(result_body)
+        # The `result` value may be: a list of documents, a single document
+        # dict, or a full IngoreadFileResult-shaped dict (with its own `result`).
+        file_result: dict[str, Any]
+        if "result" in payload:
+            value = payload["result"]
+            if isinstance(value, dict) and "result" in value:
+                file_result = dict(value)  # already a file-result-shaped dict
+            else:
+                file_result = {"result": value}  # docs: a list or a single dict
+        else:
+            file_result = {"result": []}
+        file_result.setdefault("filename", container.filename)
+        file_result.setdefault("status", status.value)
+        parsed = IngoreadFileResult.model_validate(file_result)
         parsed.time = time.perf_counter() - start
         return parsed
 
     async def _create_task(
         self, container: DocumentContainer, kwargs: dict | None
     ) -> str:
-        if container.file_path is None or not Path(container.file_path).exists():
-            raise FileNotFoundError(
-                f"container {container.filename} has no readable file_path"
-            )
-
         merged_kwargs = {**(kwargs or {}), **container.kwargs}
-        files = {"file": (container.filename, Path(container.file_path).read_bytes())}
         data = self._build_data(merged_kwargs)
-
         url = f"{self.base_url}/api/integrations/{self.integration_name}"
-        response = await self._client.post(url, files=files, data=data)
+
+        if self.send_file:
+            if container.file_path is None or not Path(container.file_path).exists():
+                raise FileNotFoundError(
+                    f"container {container.filename} has no readable file_path"
+                )
+            files = {"file": (container.filename, Path(container.file_path).read_bytes())}
+            response = await self._client.post(url, files=files, data=data)
+        else:
+            # string-only: no file part, just the kwargs as form data
+            response = await self._client.post(url, data=data)
         response.raise_for_status()
         body = response.json()
         task_id = body.get("task_id") or body.get("id")

@@ -74,3 +74,14 @@ class IngoreadFileResult(BaseModel):
     result: list[IngoreadDocument] = Field(default_factory=list)
     time: float = 0.0
     error: str | None = None
+
+    @field_validator("result", mode="before")
+    @classmethod
+    def _coerce_result_to_list(cls, value: Any) -> Any:
+        """Some services return a single document as a dict instead of a
+        one-element list. Wrap it so downstream always sees list[document]."""
+        if value is None:
+            return []
+        if isinstance(value, dict):
+            return [value]
+        return value
