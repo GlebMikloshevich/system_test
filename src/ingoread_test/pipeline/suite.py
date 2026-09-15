@@ -1,4 +1,4 @@
-"""SuiteModule — run several datasets and decide release across all of them."""
+"""Run several datasets through the shared pipeline and collect their outcomes."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from ..results.models import (
     MeasurementsResult,
     SuiteResult,
 )
-from .run_module import RunRequest, execute_run
+from .run import RunRequest, execute_run
 
 logger = logging.getLogger(__name__)
 
@@ -85,27 +85,6 @@ def aggregate_suite(
         n_passed=sum(1 for o in outcomes if not o.blocked),
         n_blocked=sum(1 for o in outcomes if o.blocked),
     )
-
-
-def evaluate_suite_gate(
-    suite_result: SuiteResult, suite_cfg: SuiteConfig
-) -> tuple[bool, list[str]]:
-    """Release is allowed only if every *blocking* dataset passed (and any
-    optional suite-level macro threshold is met)."""
-    reasons: list[str] = []
-    for o in suite_result.datasets:
-        if o.blocking and o.blocked:
-            why = "; ".join(o.reasons) or "blocked"
-            reasons.append(f"{o.name}: {why}")
-    if (
-        suite_cfg.min_macro_match_rate is not None
-        and suite_result.macro_match_rate < suite_cfg.min_macro_match_rate
-    ):
-        reasons.append(
-            f"macro match rate {suite_result.macro_match_rate:.3f} "
-            f"< required {suite_cfg.min_macro_match_rate:.3f}"
-        )
-    return bool(reasons), reasons
 
 
 async def run_suite(suite_cfg: SuiteConfig, results_dir: Path, no_viz: bool = False) -> SuiteResult:

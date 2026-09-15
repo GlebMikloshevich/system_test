@@ -1,4 +1,4 @@
-"""LoggerModule — pluggable persistence for MeasurementsResult.
+"""Persistence for a run's artifacts: local staging, then S3.
 
 Results belong in S3. The local sink writes the same artifacts to a working
 directory first, because the JSON and the HTML report have to exist as files

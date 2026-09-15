@@ -1,4 +1,4 @@
-¬# Code review — weak places & proposed fixes
+# Code review — weak places & proposed fixes
 
 A weakness audit of `ingoread-test`, ordered by impact on the system's job: a
 trustworthy **pre-release gate** that produces document-extraction metrics and
@@ -8,6 +8,15 @@ Each item has a **description** (what's wrong and why it matters) and a
 **proposed fix**. Locations are `file:line` at time of writing.
 
 Legend: 🔴 Critical · 🟠 High · 🟡 Medium · ⚪ Lower
+
+> **Note on paths.** This audit's `file:line` references predate the move to a
+> layered package. The modules it names now live at: `test_module.py` →
+> `integration/runner.py`, `scorer_module.py` → `scoring/aggregate.py`,
+> `logger_module.py` → `reporting/sinks.py`, `visualization_module.py` →
+> `reporting/html.py`, `historical_scorer.py` → `gate/history.py` +
+> `gate/release.py`, `run_module.py`/`suite_module.py`/`dataset_module.py` →
+> `pipeline/`. `field_scorers.py` and `document_scorer.py` no longer exist —
+> comparison is delegated to stickler under `scoring/`.
 
 ---
 

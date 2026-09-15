@@ -8,11 +8,8 @@ from pathlib import Path
 
 from ingoread_test.config import load_suite
 from ingoread_test.config.suite_config import DatasetRef, SuiteConfig
-from ingoread_test.modules.suite_module import (
-    aggregate_suite,
-    evaluate_suite_gate,
-    run_suite,
-)
+from ingoread_test.gate import evaluate_suite_gate
+from ingoread_test.pipeline.suite import aggregate_suite, run_suite
 from ingoread_test.results.models import DatasetOutcome, MeasurementsResult
 
 REPO_ROOT = Path(__file__).resolve().parent.parent

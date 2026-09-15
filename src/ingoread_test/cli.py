@@ -31,16 +31,15 @@ from .dataset import (
     save_manifest,
 )
 from .dataset.bootstrap import result_to_manifest
-from .modules import (
+from .gate import evaluate_suite_gate
+from .pipeline import (
     EmptyDatasetError,
     RunOutcome,
     RunRequest,
-    evaluate_suite_gate,
     execute_run,
-    read_result,
-    render_suite_html,
     run_suite,
 )
+from .reporting import read_result, render_suite_html
 from .results.models import MeasurementsResult
 from .utils.s3 import open_s3_uri
 
@@ -49,6 +48,14 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(messag
 app = typer.Typer(add_completion=False, help="Ingoread test system CLI")
 dataset_app = typer.Typer(add_completion=False, help="Inspect and curate datasets in S3")
 app.add_typer(dataset_app, name="dataset")
+
+
+# The four `dataset` subcommands all address the same S3 dataset, so they share
+# one definition of how it is addressed — a new storage option is added once.
+_MANIFEST_OPT = typer.Option(None, "--manifest", help="Manifest name inside the dataset")
+_ENDPOINT_OPT = typer.Option(None, "--endpoint-url")
+_REGION_OPT = typer.Option(None, "--region")
+_DRY_RUN_OPT = typer.Option(False, "--dry-run", help="Report what would change, write nothing")
 
 
 @app.callback()
@@ -106,10 +113,19 @@ def run(
         for note in outcome.comparison.notes:
             typer.echo(f"history_note={note}")
 
-    for reason in outcome.reasons:
+    _exit_on_gate(outcome.blocked, outcome.reasons)
+
+
+def _exit_on_gate(blocked: bool, reasons: list[str]) -> None:
+    """Print the verdict TFS parses, then exit with the code it acts on.
+
+    `run` and `suite` gate different scopes but must speak the same last two
+    lines, because the pipeline reading them does not know which one it called.
+    """
+    for reason in reasons:
         typer.echo(f"gate_block={reason}")
-    typer.echo(f"release_gate={'BLOCKED' if outcome.blocked else 'OK'}")
-    sys.exit(1 if outcome.blocked else 0)
+    typer.echo(f"release_gate={'BLOCKED' if blocked else 'OK'}")
+    sys.exit(1 if blocked else 0)
 
 
 def _echo_dataset(dataset: Dataset) -> None:
@@ -216,10 +232,7 @@ def suite(
         html_path = render_suite_html(result, results_dir, blocked=blocked, reasons=reasons)
         typer.echo(f"suite_html={html_path.resolve()}")
 
-    for reason in reasons:
-        typer.echo(f"gate_block={reason}")
-    typer.echo(f"release_gate={'BLOCKED' if blocked else 'OK'}")
-    sys.exit(1 if blocked else 0)
+    _exit_on_gate(blocked, reasons)
 
 
 def _open_for_curation(
@@ -241,11 +254,9 @@ def _open_for_curation(
 @dataset_app.command("list")
 def dataset_list(
     uri: str = typer.Argument(..., help="Dataset root, e.g. s3://ingoread-datasets/invoices"),
-    manifest: str | None = typer.Option(
-        None, "--manifest", help="Manifest name inside the dataset"
-    ),
-    endpoint_url: str | None = typer.Option(None, "--endpoint-url"),
-    region: str | None = typer.Option(None, "--region"),
+    manifest: str | None = _MANIFEST_OPT,
+    endpoint_url: str | None = _ENDPOINT_OPT,
+    region: str | None = _REGION_OPT,
     removed_only: bool = typer.Option(False, "--removed-only"),
 ) -> None:
     """List a dataset's samples with their unique ids and removal state."""
@@ -267,9 +278,9 @@ def dataset_list(
 def dataset_upload(
     local_dir: Path = typer.Argument(..., exists=True, file_okay=False, readable=True),
     uri: str = typer.Argument(..., help="Destination, e.g. s3://ingoread-datasets/invoices"),
-    manifest: str | None = typer.Option(None, "--manifest"),
-    endpoint_url: str | None = typer.Option(None, "--endpoint-url"),
-    region: str | None = typer.Option(None, "--region"),
+    manifest: str | None = _MANIFEST_OPT,
+    endpoint_url: str | None = _ENDPOINT_OPT,
+    region: str | None = _REGION_OPT,
     dry_run: bool = typer.Option(False, "--dry-run", help="Validate only, upload nothing"),
 ) -> None:
     """Validate a dataset folder and upload it to S3.
@@ -300,15 +311,13 @@ def dataset_remove(
     uri: str = typer.Argument(...),
     selectors: list[str] = typer.Argument(..., help="Sample ids or filenames to remove"),
     reason: str | None = typer.Option(None, "--reason", help="Why the sample is being removed"),
-    manifest: str | None = typer.Option(None, "--manifest"),
-    endpoint_url: str | None = typer.Option(None, "--endpoint-url"),
-    region: str | None = typer.Option(None, "--region"),
+    manifest: str | None = _MANIFEST_OPT,
+    endpoint_url: str | None = _ENDPOINT_OPT,
+    region: str | None = _REGION_OPT,
     purge: bool = typer.Option(
         False, "--purge", help="Drop the entry entirely instead of marking it removed"
     ),
-    dry_run: bool = typer.Option(
-        False, "--dry-run", help="Report what would change, write nothing"
-    ),
+    dry_run: bool = _DRY_RUN_OPT,
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation prompt"),
 ) -> None:
     """Remove samples from a dataset on user request.
@@ -336,10 +345,10 @@ def dataset_remove(
 def dataset_restore(
     uri: str = typer.Argument(...),
     selectors: list[str] = typer.Argument(..., help="Sample ids or filenames to restore"),
-    manifest: str | None = typer.Option(None, "--manifest"),
-    endpoint_url: str | None = typer.Option(None, "--endpoint-url"),
-    region: str | None = typer.Option(None, "--region"),
-    dry_run: bool = typer.Option(False, "--dry-run"),
+    manifest: str | None = _MANIFEST_OPT,
+    endpoint_url: str | None = _ENDPOINT_OPT,
+    region: str | None = _REGION_OPT,
+    dry_run: bool = _DRY_RUN_OPT,
 ) -> None:
     """Undo a soft removal, putting samples back into the dataset."""
     parsed, location = _open_for_curation(uri, manifest, endpoint_url, region)

@@ -1,6 +1,6 @@
 # Architecture & internals
 
-How `ingoread-test` is put together: the pipeline, the modules, the data models,
+How `ingoread-test` is put together: the pipeline, the layers, the data models,
 and the scoring algorithm. For task-oriented usage see
 [commands.md](commands.md) and the [dataset & config guide](dataset-and-config-guide.md);
 for known weaknesses see [code-review.md](code-review.md).
@@ -27,19 +27,19 @@ config.yaml   ─▶ load_configs ─▶ TestConfig + ScorerConfig
 s3://dataset/ ─▶ load_dataset ─▶ Dataset (samples ▸ documents ▸ fields)
                     │              cached locally; removed samples dropped here
                                    │
-                 TestModule.run_test (batched async I/O)
+              integration.runner.run_test (batched async I/O)
                                    │  predictions: dict[sample_id → IngoreadFileResult]
-                 ScorerModule.score (stickler pairing + comparison)
+              scoring.aggregate.score (stickler pairing + comparison)
                                    │  MeasurementsResult
             ┌──────────────────────┼──────────────────┬────────────────────┐
-   JsonFileSink (.json)  VisualizationModule    S3ResultSink       HistoricalScorer
+   JsonFileSink (.json)    reporting.html       S3ResultSink        gate.history
                               (.html)     (<dataset>/<integration>/  (vs --previous)
                                    │       <date>/<time>/)
-                          evaluate_release_gate ─▶ exit 0 | 1
+                     gate.release.evaluate_release_gate ─▶ exit 0 | 1
 ```
 
 One dataset's journey through that pipeline is
-[`run_module.execute_run`](../src/ingoread_test/modules/run_module.py), which
+[`pipeline.run.execute_run`](../src/ingoread_test/pipeline/run.py), which
 both `run` and `suite` call — the two commands differ in how they report
 progress and what they do with a failure, not in what they do.
 [`cli.py`](../src/ingoread_test/cli.py) holds only the Typer surface and the
@@ -70,27 +70,31 @@ src/ingoread_test/
 │   ├── factory.py         # build_integration(test_cfg) → Integration
 │   ├── schemas.py         # IngoreadFileResult/Document/Field + normalization
 │   ├── stub.py            # deterministic echo / file-backed integration
-│   └── http.py            # live HTTP integration (create → poll → parse)
+│   ├── http.py            # live HTTP integration (create → poll → parse)
+│   └── runner.py          # run_test(): async batched prediction + TestRunStats
 ├── scoring/              # comparison, delegated to stickler
 │   ├── models.py          # scorer config → stickler StructuredModel
 │   ├── comparators.py     # FieldType → stickler comparator + threshold
 │   ├── adapters.py        # GT / prediction → model instances (applies `selection`)
 │   ├── evaluator.py       # compare_models() / score_document_pair()
-│   └── pairing.py         # stickler's Hungarian GT↔prediction matching
-├── modules/
-│   ├── run_module.py      # execute_run(): one dataset, config → release verdict
-│   ├── test_module.py     # run_test(): async batched prediction + TestRunStats
-│   ├── scorer_module.py   # score(): aggregate pairs into MeasurementsResult
-│   ├── historical_scorer.py # compare_to_previous() + evaluate_release_gate()
-│   ├── suite_module.py    # run_suite() / aggregate_suite() / evaluate_suite_gate()
-│   ├── dataset_module.py  # open_dataset(): TestConfig → Dataset
-│   ├── logger_module.py   # Sink ABC, JsonFileSink, S3ResultSink, upload_run()
-│   └── visualization_module.py # render_html() + render_suite_html()
+│   ├── pairing.py         # stickler's Hungarian GT↔prediction matching
+│   └── aggregate.py       # score(): aggregate pairs into MeasurementsResult
+├── pipeline/             # orchestration: the sequence a run goes through
+│   ├── run.py             # execute_run(): one dataset, config → release verdict
+│   ├── suite.py           # run_suite() / aggregate_suite()
+│   └── dataset.py         # open_dataset(): TestConfig → Dataset
+├── gate/                 # release policy — pure, no I/O
+│   ├── history.py         # compare_to_previous(): this run vs its baseline
+│   └── release.py         # evaluate_release_gate() / evaluate_suite_gate()
+├── reporting/            # output: where artifacts go and how they look
+│   ├── sinks.py           # Sink ABC, JsonFileSink, S3ResultSink, upload_run()
+│   └── html.py            # render_html() + render_suite_html()
 ├── results/
 │   └── models.py          # DocumentPair, *Measurement, MeasurementsResult,
 │                          # Comparative*, DatasetOutcome, SuiteResult
 └── utils/
-    └── s3.py              # S3Hub + s3:// URI helpers (datasets in, results out)
+    ├── s3.py              # S3Hub + s3:// URI helpers (datasets in, results out)
+    └── personal_information.py  # deployment-local hook: upload_to_impala()
 ```
 
 ---
@@ -150,7 +154,7 @@ manifest, drops removed and excluded samples, and resolves each sample's
 `file_path` and id file, failing if an id file disagrees with the manifest.
 
 ### 5.2 Running predictions — `run_test`
-`run_test` ([`modules/test_module.py`](../src/ingoread_test/modules/test_module.py))
+`run_test` ([`integration/runner.py`](../src/ingoread_test/integration/runner.py))
 fans out over containers with an `asyncio.Semaphore(batch_size)`, wrapping each
 `integration.predict()` in `asyncio.wait_for(timeout)`. It records:
 - a `dict[sample_id → IngoreadFileResult]` (keying by id, not filename, so two
@@ -172,13 +176,13 @@ IngoreadFileResult` and `async aclose()`.
   couple of response shapes, and honors `poll_interval` / `poll_timeout`.
 
 ### 5.4 Scoring — `score`
-`score` ([`modules/scorer_module.py`](../src/ingoread_test/modules/scorer_module.py))
+`score` ([`scoring/aggregate.py`](../src/ingoread_test/scoring/aggregate.py))
 walks each container, pairs GT and predicted documents per `doc_label`, then
 aggregates. It also emits warnings for labels with no scorer config, configs
 that never matched, and COMPLETED-but-empty predictions. Output is a
 `MeasurementsResult`.
 
-### 5.4a One run, one pipeline — `modules/run_module.py`
+### 5.4a One run, one pipeline — `pipeline/run.py`
 `execute_run(RunRequest)` is the whole sequence: open the dataset, send it,
 score it, load the baseline, write and publish the artifacts, decide the gate.
 It returns a `RunOutcome` carrying the result, the comparison, the verdict and
@@ -246,7 +250,7 @@ For each `doc_label`, GT and predicted documents are grouped (by page unless
 - unmatched GTs and predictions are kept as **half pairs** (one side `None`) so
   misses and hallucinations show up in the report.
 
-### 6.5 Aggregation — `modules/scorer_module.py`
+### 6.5 Aggregation — `scoring/aggregate.py`
 Every pair's comparison feeds `aggregate_from_comparisons`, which sums the
 confusion matrix across the run and derives precision / recall / F1 / accuracy
 per field, plus the error cells `fd` (wrong value), `fn` (missing) and `fa`
@@ -274,10 +278,13 @@ then exits `0` or `1`.
 
 ## 8. Extension points
 
-- **New field type** — add a value to `FieldType`, write a
-  `(*) -> FieldScoreResult` function, and register it in `FIELD_SCORERS`.
+- **New field type** — add a value to `FieldType` and map it to a stickler
+  comparator in `scoring/comparators.py` (`build_comparator`, plus a default in
+  `threshold_for`).
 - **New integration** — subclass `Integration`, implement `predict` / `aclose`,
-  add a branch in `cli._build_integration` and a `kind` to `IntegrationKind`.
-- **New output sink** — subclass `Sink` and call it alongside `JsonFileSink`.
+  add a `kind` to `IntegrationKind` and a branch in
+  `integration/factory.py:build_integration`.
+- **New output sink** — subclass `Sink` in `reporting/sinks.py` and call it
+  alongside `JsonFileSink`.
 - **New gate condition** — add a switch to `HistoryConfig` and a clause to
-  `evaluate_release_gate`.
+  `evaluate_release_gate` in `gate/release.py`.

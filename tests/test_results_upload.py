@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 import pytest
 
 from ingoread_test.config.test_config import ResultsConfig, TestConfig
-from ingoread_test.modules.logger_module import (
+from ingoread_test.reporting.sinks import (
     S3ResultSink,
     read_result,
     run_folder_key,
@@ -151,8 +151,9 @@ async def test_a_real_run_lands_in_its_own_s3_folder(s3_client, s3_hub, tmp_path
         ScorerConfig,
     )
     from ingoread_test.dataset import load_dataset
+    from ingoread_test.integration.runner import run_test
     from ingoread_test.integration.stub import StubIntegration
-    from ingoread_test.modules import run_test, score
+    from ingoread_test.scoring.aggregate import score
 
     s3_client.objects = {
         "datasets/invoices-ru/manifest.yaml": (

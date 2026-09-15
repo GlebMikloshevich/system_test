@@ -1,4 +1,4 @@
-"""ScorerModule — pair documents and aggregate metrics into MeasurementsResult.
+"""Pair documents and aggregate their comparisons into a MeasurementsResult.
 
 Per-document-type aggregation is stickler's: every pair's `compare_with()`
 output goes into `aggregate_from_comparisons`, which sums the confusion matrix
@@ -18,6 +18,7 @@ from stickler import aggregate_from_comparisons
 from ..config.scorer_config import DocumentMeasurerConfig, FieldConfig, ScorerConfig
 from ..config.test_config import TestConfig
 from ..dataset.models import Dataset
+from ..integration.runner import TestRunStats
 from ..integration.schemas import IngoreadFileResult, IngoreadStatus
 from ..results.models import (
     DocumentContainerPair,
@@ -26,9 +27,8 @@ from ..results.models import (
     FieldMeasurement,
     MeasurementsResult,
 )
-from ..scoring.models import scored_fields
-from ..scoring.pairing import pair_documents
-from .test_module import TestRunStats
+from .models import scored_fields
+from .pairing import pair_documents
 
 logger = logging.getLogger(__name__)
 

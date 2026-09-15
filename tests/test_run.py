@@ -10,9 +10,11 @@ import yaml
 
 from ingoread_test.config.loader import load_configs
 from ingoread_test.dataset.loader import load_dataset
+from ingoread_test.integration.runner import run_test
 from ingoread_test.integration.stub import StubIntegration
-from ingoread_test.modules import render_html, run_test, score
+from ingoread_test.reporting import render_html
 from ingoread_test.results.models import MeasurementsResult
+from ingoread_test.scoring.aggregate import score
 
 MANIFEST = [
     {

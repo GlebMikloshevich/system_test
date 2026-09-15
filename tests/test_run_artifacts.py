@@ -8,8 +8,8 @@ import yaml
 from typer.testing import CliRunner
 
 from ingoread_test import cli
-from ingoread_test.modules import run_module
-from ingoread_test.modules.logger_module import RunArtifacts
+from ingoread_test.pipeline import run as run_module
+from ingoread_test.reporting.sinks import RunArtifacts
 
 runner = CliRunner()
 
