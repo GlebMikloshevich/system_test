@@ -29,7 +29,7 @@ s3://dataset/ ─▶ load_dataset ─▶ Dataset (samples ▸ documents ▸ fiel
                                    │
                  TestModule.run_test (batched async I/O)
                                    │  predictions: dict[sample_id → IngoreadFileResult]
-                 ScorerModule.score (Hungarian pairing + per-field scoring)
+                 ScorerModule.score (stickler pairing + comparison)
                                    │  MeasurementsResult
             ┌──────────────────────┼──────────────────┬────────────────────┐
    JsonFileSink (.json)  VisualizationModule    S3ResultSink       HistoricalScorer
@@ -67,10 +67,12 @@ src/ingoread_test/
 │   ├── schemas.py         # IngoreadFileResult/Document/Field + normalization
 │   ├── stub.py            # deterministic echo / file-backed integration
 │   └── http.py            # live HTTP integration (create → poll → parse)
-├── scoring/
-│   ├── pairing.py         # Hungarian GT↔prediction matching
-│   ├── document_scorer.py # score one (gt, prediction) pair across fields
-│   └── field_scorers.py   # per-field scoring functions by FieldType
+├── scoring/              # comparison, delegated to stickler
+│   ├── models.py          # scorer config → stickler StructuredModel
+│   ├── comparators.py     # FieldType → stickler comparator + threshold
+│   ├── adapters.py        # GT / prediction → model instances (applies `selection`)
+│   ├── evaluator.py       # compare_models() / score_document_pair()
+│   └── pairing.py         # stickler's Hungarian GT↔prediction matching
 ├── modules/
 │   ├── test_module.py     # run_test(): async batched prediction + TestRunStats
 │   ├── scorer_module.py   # score(): aggregate pairs into MeasurementsResult
@@ -184,41 +186,47 @@ local path or an `s3://` URI); `evaluate_release_gate` decides the exit code
 
 ## 6. Scoring algorithm
 
-### 6.1 Pairing — `scoring/pairing.py`
+Comparison is delegated to [stickler](https://github.com/awslabs/stickler)
+(`stickler-eval`). The scorer config *is* the comparison schema: each
+`doc_label` becomes a stickler `StructuredModel`, each field a `ComparableField`
+carrying its comparator, threshold and weight.
+
+### 6.1 Building the model — `scoring/models.py`, `scoring/comparators.py`
+`build_document_model` turns a `DocumentMeasurerConfig` into a
+`StructuredModel`; `build_comparator` maps each `FieldType` (or an explicit
+`comparator:` name) to the stickler comparator that scores it, with
+`threshold_for` supplying the default threshold. `scored_fields` is the single
+definition of which fields count — everything not marked `ignore`.
+
+### 6.2 Adapting the data — `scoring/adapters.py`
+`gt_to_model` and `prediction_to_model` populate that model from a `DocumentGT`
+and an `IngoreadDocument`. This is where `selection` is applied (`first`, `all`,
+`top_n`) and where native GT values (numbers, bools, boxes) meet the
+comparators.
+
+### 6.3 Scoring a pair — `scoring/evaluator.py`
+`compare_models` is one `compare_with()` call; `score_document_pair` turns its
+result into a `DocumentPair`. A document is `matched` only when **every** scored
+field (or any-of `field_group`) matched; `mean_score` keeps stickler's weighted
+similarity so a near miss still earns partial credit.
+
+### 6.4 Pairing — `scoring/pairing.py`
 For each `doc_label`, GT and predicted documents are grouped (by page unless
-`multipage_matching`), then matched within each group:
-- 1:1 → scored directly.
-- otherwise → the **Hungarian algorithm** (`scipy.linear_sum_assignment`)
-  minimizes cost over an n×m matrix. Cost is `1 − IoU` when *every* document has
-  a valid 4-element bbox, else `1 − fraction_fields_matched`.
-- unmatched GTs and predictions are kept as **half-pairs** (one side `None`) so
+`multipage_matching`), then matched within each group with stickler's
+`HungarianMatcher`:
+- similarity comes from `BBoxIoUComparator` when *every* document carries a
+  valid 4-element page bbox — position is then the more reliable signal;
+- otherwise from `StructuredModelComparator`, i.e. whole-document similarity
+  field by field;
+- unmatched GTs and predictions are kept as **half pairs** (one side `None`) so
   misses and hallucinations show up in the report.
 
-### 6.2 Field scoring — `scoring/field_scorers.py`
-`FIELD_SCORERS` maps each `FieldType` to a function returning
-`FieldScoreResult(matched, metrics)`:
-
-| Type | Match rule | Metrics |
-| --- | --- | --- |
-| `text` | exact (after optional `strip`/`casefold`) | `cer`, `wer` (jiwer) |
-| `literal` | exact (after optional normalization) | `accuracy` |
-| `number` | `math.isclose(abs_tol, rel_tol)` | `mae`, `mse` |
-| `bool` | truthy-set membership equality | `accuracy` |
-| `bbox` | IoU ≥ `iou_threshold` | `iou` |
-| `llm_text` | requires `LLM_JUDGE_URL` (else NotImplemented) | — |
-
-`select_prediction` applies the `selection` strategy (only `FIRST` implemented).
-
-### 6.3 Document & aggregation
-`score_document_pair` scores every non-`ignore` field; a document `matched` only
-when **all** individual (and any-of group) field matches hold. It also records
-`fraction_fields_matched`. `score` then computes:
-- per-field `match_rate` and mean metrics (`FieldMeasurement`),
-- per-label `match_rate` over its pairs (`DocumentMeasurement`),
-- overall `match_rate` over all pairs.
-
-> Note: several denominator subtleties (containers vs pairs, half-pairs,
-> dropped `inf`) are documented as weaknesses in [code-review.md](code-review.md).
+### 6.5 Aggregation — `modules/scorer_module.py`
+Every pair's comparison feeds `aggregate_from_comparisons`, which sums the
+confusion matrix across the run and derives precision / recall / F1 / accuracy
+per field, plus the error cells `fd` (wrong value), `fn` (missing) and `fa`
+(invented). On top of that the harness keeps its own headline `match_rate`: the
+share of documents where every scored field was right.
 
 ---
 

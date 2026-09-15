@@ -396,29 +396,54 @@ merged and sent as multipart form data:
 
 ## 5. Field types
 
-| `field_type` | Matched when | Metrics | `measurer_kwargs` |
+Each `field_type` is shorthand for a [stickler](https://github.com/awslabs/stickler)
+comparator; the scorer config is the comparison schema.
+
+| `field_type` | Comparator | Default threshold | Notes |
 | --- | --- | --- | --- |
-| `text` | exact string equality | `cer`, `wer` | `strip`, `casefold` |
-| `literal` | exact string equality | `accuracy` | `strip`, `casefold` |
-| `number` | values equal (or within tolerance) | `mae`, `mse` | `abs_tol`, `rel_tol` |
-| `bool` | truthiness matches (`true/1/yes/y/да`) | `accuracy` | – |
-| `bbox` | IoU ≥ threshold | `iou` | `iou_threshold` (0.5) |
-| `bbox_set` | a field with several boxes (e.g. stamps): all GT boxes found at threshold AND count exact | `iou` (mean), `count_gt`, `count_pred`, `count_match`, `precision`, `recall` | `iou_threshold` (0.5) |
-| `llm_text` | requires `LLM_JUDGE_URL` (not in v1) | – | – |
+| `text` | `ExactComparator` | 1.0 | `measurer_kwargs: {strip, casefold}` |
+| `literal` | `ExactComparator` | 1.0 | |
+| `fuzzy_text` | `LevenshteinComparator` | 0.7 | graded similarity, case-insensitive |
+| `number` | `NumericComparator` | 1.0 | `measurer_kwargs: {abs_tol, rel_tol}` |
+| `bool` | `ExactComparator` | 1.0 | parses `true/1/yes/да` and `false/0/no/нет` |
+| `date` | `DateComparator` | 1.0 | format-independent |
+| `phone` | `PhoneComparator` | 1.0 | `comparator_kwargs: {region: RU}` |
+| `bbox` | `BBoxIoUComparator` | 0.5 | `measurer_kwargs: {iou_threshold}` |
+| `bbox_set` | `BBoxIoUComparator` | 0.5 | many boxes, matched set-to-set |
+| `llm_text` | `LLMComparator` | 0.7 | needs `pip install 'ingoread-test[llm]'` |
+
+Anything else stickler ships — `FuzzyComparator`, `SemanticComparator`, … — is
+reachable with `comparator: <ClassName>` plus `comparator_kwargs`.
 
 `gt_value` is stored natively: a number (`184`), a bool (`true`), a `bbox` list
 (`[x1, y1, x2, y2]`), or a `bbox_set` list of boxes (`[[..], [..]]`). The legacy
-string forms (`"x1,y1,x2,y2"`, `"…; …"`) are still accepted. For `bbox_set`, all
-predicted boxes in the field are matched one-to-one to the GT boxes by IoU
-(Hungarian), so order doesn't matter.
+string forms (`"x1,y1,x2,y2"`, `"…; …"`) are still accepted. For `bbox_set`, the
+predicted boxes are matched to the GT boxes set-to-set, so order doesn't matter.
 
 Extra per-field keys:
 
+- `weight: 2.0` — how much the field counts toward the document score.
+- `threshold: 0.85` — similarity at which this field counts as matched.
+- `clip_under_threshold` — zero out sub-threshold similarity (on by default).
+- `comparator` / `comparator_kwargs` — use any stickler comparator directly.
 - `ignore: true` — exclude the field from scoring, aggregation, and the report.
 - `field_group: <name>` — several fields with the same group count as one
   "any-of" match.
-- `selection: first` — which predicted value to score (only `first` in v1;
-  `top_n`/`all` are reserved). `take_first: true|false` is a legacy alias.
+- `selection` — what to do when the API returns several candidates: `first`
+  (default) scores one value; `all` and `top_n` (with `top_n: N`) turn the field
+  into a set matched element by element, so extra or missing values surface as
+  `fa` / `fn`.
+
+### What the report carries
+
+| Metric | Meaning |
+| --- | --- |
+| `match_rate` | share of documents where **every** scored field was right — all or nothing |
+| `mean_score` | stickler's weighted similarity — partial credit, so a near miss still counts |
+
+Per field: precision, recall, F1 and accuracy, plus the error cells that fired —
+`fd` (wrong value), `fn` (missing value), `fa` (value invented where the ground
+truth had none).
 
 ---
 

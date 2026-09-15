@@ -189,12 +189,22 @@ scorer:
 
 | Goal | Use | Notes |
 | --- | --- | --- |
-| Free text / OCR string | `text` | reports CER/WER; add `strip`/`casefold` to relax |
+| String that must match exactly | `text` | add `strip`/`casefold` to relax |
+| OCR-prone string, partial credit | `fuzzy_text` | Levenshtein similarity; tune with `threshold` |
 | Code/enum, exact only | `literal` | A/B/C categories, years |
 | Numeric value | `number` | add `abs_tol`/`rel_tol` for tolerance |
-| Yes/no flag | `bool` | recognizes `true/1/yes/y/да` |
+| Yes/no flag | `bool` | recognizes `true/1/yes/да` and `false/0/no/нет` |
+| Date in any format | `date` | format-independent |
+| Phone number | `phone` | `comparator_kwargs: {region: RU}` |
 | Region on the page | `bbox` | IoU ≥ `iou_threshold` (default 0.5) |
-| Several regions (e.g. stamps) | `bbox_set` | checks presence + count + IoU together |
+| Several regions (e.g. stamps) | `bbox_set` | boxes matched set-to-set |
+| Free-form answer judged by an LLM | `llm_text` | needs `pip install 'ingoread-test[llm]'` |
+
+Each type is shorthand for a [stickler](https://github.com/awslabs/stickler)
+comparator; `comparator: <ClassName>` plus `comparator_kwargs` reaches any other
+one it ships. Per-field `weight` and `threshold` tune how much a field counts
+and how close is close enough — see
+[docs/commands.md](commands.md#5-field-types).
 
 ### Multiple boxes in one field — stamps, signatures, photos
 
