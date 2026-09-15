@@ -1,0 +1,74 @@
+test:
+  name: document_quality
+  dataset:
+    # Datasets live in S3; a local directory works the same way and keeps this
+    # example runnable without a bucket:
+    #   uri: s3://ingoread-datasets/document_quality
+    uri: examples/document_quality/dataset
+    # manifest: manifest.yaml     # default, read from inside the dataset
+    # cache_dir: .cache/ingoread-datasets
+    # exclude_sample_ids: []      # skipped every run; use `dataset remove` to
+    #                             # take a sample out of the dataset for good
+  integration_name: document_quality_checks
+  batch_size: 4
+  timeout: 60
+  integration:
+    kind: stub
+    # SPREAD mode (default): every key in each manifest container's `kwargs`
+    # block is sent as its own multipart form field on the create-task POST.
+    # data_field_name left unset = spread.
+    #
+    # To bundle all kwargs into one JSON-encoded string under a single field
+    # (e.g. an API expecting `mapping_string`), uncomment the next line:
+    # data_field_name: mapping_string
+  results:
+    # Results belong in S3; the local copy is staging space that is removed once
+    # a run is uploaded. This example has no bucket, so it keeps its files here:
+    local_dir: results
+    # Uploads to <uri>/<dataset name>/<integration>/<date>/<time>/result.json:
+    # uri: s3://ingoread-results/runs
+    upload_html: true
+  history:
+    match_rate_tolerance: 0.02
+    fail_on_regression: true
+
+scorer:
+  name: document_quality
+  measurement_configs:
+    - doc_label: document_quality
+      multipage_matching: true
+      fields:
+        # Bool fields are scored with `_bool_score` — accuracy = 1 on exact match,
+        # 0 otherwise. The validator already coerces raw JSON `true` / `false` /
+        # 1 / "yes" / "да" into bool.
+        - field_name: has_signature
+          field_type: bool
+
+        - field_name: has_stamp
+          field_type: bool
+
+        - field_name: has_photo
+          field_type: bool
+
+        - field_name: has_qr_code
+          field_type: bool
+
+        - field_name: is_legible
+          field_type: bool
+
+        - field_name: correct_orientation
+          field_type: bool
+
+        - field_name: pages_intact
+          field_type: bool
+
+        - field_name: not_blurred
+          field_type: bool
+
+        # Mixed-in non-bool fields are fine alongside bools — they just route to
+        # their own scorers (TEXT/CER, NUMBER/MAE, etc.).
+        - field_name: scan_dpi
+          field_type: number
+
+        - field_name: detected_language
+          field_type: literal

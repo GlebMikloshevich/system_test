@@ -25,6 +25,13 @@ class DocumentPair(BaseModel):
 
 
 class DocumentContainerPair(BaseModel):
+    """One sample's ground truth paired with what the backend returned.
+
+    ``sample_id`` is the sample's unique identity; ``filename`` is kept because
+    reports and older result JSON are read by it.
+    """
+
+    sample_id: str = ""
     filename: str
     gts: DocumentContainer
     predictions: IngoreadFileResult
@@ -77,3 +84,40 @@ class ComparativeResult(BaseModel):
     overall_delta: float
     per_label_delta: dict[str, float] = Field(default_factory=dict)
     notes: list[str] = Field(default_factory=list)
+
+
+class DatasetOutcome(BaseModel):
+    """One suite member: how its own run + gate turned out.
+
+    `result` is None only when the dataset failed to run at all (see `error`);
+    `blocking` records whether this member's verdict can block the release.
+    """
+
+    name: str
+    blocking: bool = True
+    result: MeasurementsResult | None = None
+    comparison: ComparativeResult | None = None
+    blocked: bool = False
+    reasons: list[str] = Field(default_factory=list)
+    error: str | None = None
+    json_path: str | None = None
+    html_path: str | None = None
+
+
+class SuiteResult(BaseModel):
+    """Several datasets rolled up into one release decision.
+
+    Two headline rates, because they answer different questions:
+    `macro_match_rate` weights every dataset equally (so a small dataset's
+    regression can't hide behind a large one), `micro_match_rate` pools every
+    document (so it reflects the overall document population).
+    """
+
+    suite_name: str
+    start_date: datetime
+    datasets: list[DatasetOutcome] = Field(default_factory=list)
+    macro_match_rate: float = 0.0
+    micro_match_rate: float = 0.0
+    total_samples: int = 0
+    n_passed: int = 0
+    n_blocked: int = 0

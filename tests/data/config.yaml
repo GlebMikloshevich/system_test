@@ -1,0 +1,19 @@
+test:
+  name: smoke
+  files_root: tests/data/dataset
+  manifest: tests/data/dataset/manifest.yaml
+  batch_size: 2
+  timeout: 10
+  integration:
+    kind: stub
+scorer:
+  name: default
+  measurement_configs:
+    - doc_label: invoice
+      fields:
+        - field_name: total
+          field_type: number
+        - field_name: vendor
+          field_type: text
+        - field_name: paid
+          field_type: bool

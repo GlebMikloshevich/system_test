@@ -22,3 +22,7 @@ artifacts
 
 # misc
 .vscode
+
+# Run artifacts kept locally (results.local_dir)
+results/
+.cache/

@@ -1,0 +1,16 @@
+- filename: invoice_001.pdf
+  documents:
+    - doc_label: invoice
+      page: 0
+      fields:
+        total: {gt_value: "123.45"}
+        vendor: {gt_value: "Acme"}
+        paid: {gt_value: "true"}
+- filename: invoice_002.pdf
+  documents:
+    - doc_label: invoice
+      page: 0
+      fields:
+        total: {gt_value: "10.00"}
+        vendor: {gt_value: "Beta"}
+        paid: {gt_value: "false"}

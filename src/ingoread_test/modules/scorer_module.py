@@ -160,7 +160,7 @@ def score(
 
     empty_pred_files: list[str] = []
     for container in dataset.containers:
-        pred = predictions.get(container.filename)
+        pred = predictions.get(container.key)
         if pred is None:
             continue
         if not pred.result and pred.status != IngoreadStatus.FAILED:
@@ -179,6 +179,7 @@ def score(
             pairs_by_label[label].extend(sub_pairs)
         container_pairs.append(
             DocumentContainerPair(
+                sample_id=container.sample_id,
                 filename=container.filename,
                 gts=container,
                 predictions=pred,

@@ -1,0 +1,24 @@
+# A suite groups several datasets behind one release decision.
+# Run with:  ingoread-test suite examples/suite.yaml
+#
+# Member `config`/`baseline` paths are resolved relative to THIS file.
+# A release is allowed only if every blocking dataset passes its own gate.
+name: nightly
+
+# Optional suite-level gate: also block if the macro-average drops below this.
+# min_macro_match_rate: 0.95
+
+datasets:
+  - name: vehicle_registration
+    config: vehicle_registration/config.yaml
+    # baseline: baselines/vehicle_registration.json   # gate against a known-good run
+    blocking: true
+
+  - name: document_quality
+    config: document_quality/config.yaml
+    blocking: true
+
+  # Example of a not-yet-trusted dataset: reported but doesn't block the release.
+  # - name: experimental_passports
+  #   config: passports/config.yaml
+  #   blocking: false

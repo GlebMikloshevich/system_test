@@ -29,6 +29,12 @@ class TestRunStats:
 async def run_test(
     cfg: TestConfig, integration: Integration, dataset: Dataset
 ) -> tuple[dict[str, IngoreadFileResult], TestRunStats]:
+    """Send every sample through the integration, keyed by sample id.
+
+    Results are keyed by ``DocumentContainer.key`` (the sample id) rather than
+    by filename, so two samples that share a filename cannot overwrite each
+    other's predictions.
+    """
     semaphore = asyncio.Semaphore(cfg.batch_size)
     results: dict[str, IngoreadFileResult] = {}
     timeouts = 0
@@ -62,7 +68,7 @@ async def run_test(
             else:
                 if result.status == IngoreadStatus.FAILED:
                     failed += 1
-            results[container.filename] = result
+            results[container.key] = result
 
     overall_start = time.perf_counter()
     await asyncio.gather(*(_one(c) for c in dataset.containers))

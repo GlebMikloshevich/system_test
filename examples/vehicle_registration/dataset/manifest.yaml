@@ -1,0 +1,50 @@
+# Dataset format version 2: a named dataset whose samples each carry a unique
+# `sample_id`. The id is also stored next to the document in a "<stem>.id" file
+# (see sample_id.py) — that file is what gets POSTed with the document, and the
+# two must agree.
+#
+# Remove a sample with:  ingoread-test dataset remove <dataset uri> <sample id>
+
+version: 2
+name: vehicle_registration
+samples:
+  - sample_id: vrc_001
+    filename: vrc_001.pdf
+    documents:
+      # Document bbox = the VRC's location on the page (x1, y1, x2, y2).
+      # Used by the Hungarian matcher (IoU) when several VRCs appear per file.
+      - doc_label: vehicle_registration
+        page: 0
+        bbox: [120, 80, 1480, 1020]
+        fields:
+          vin: {gt_value: "JTHBK1GG1F2123456"}
+          vehicle_registration_series_number: {gt_value: "77 AB 123456"}
+          model_year: {gt_value: "2019"}
+          vehicle_category: {gt_value: "B"}
+          vehicle_body_number: {gt_value: "JTHBK1GG1F2123456"}
+          engine_power: {gt_value: "184.0"}
+          max_weight: {gt_value: "2100.0"}
+          registration_plate: {gt_value: "A123BC77"}
+          color: {gt_value: "white"}
+          chassis: {gt_value: "X-CHASSIS-001"}
+          # Field-level bbox (matched via IoU); the threshold lives on the scorer config.
+          signature_box: {gt_value: [900, 820, 1180, 990]}
+
+  - sample_id: vrc_002
+    filename: vrc_002.pdf
+    documents:
+      - doc_label: vehicle_registration
+        page: 0
+        bbox: [100, 60, 1500, 1040]
+        fields:
+          vin: {gt_value: "WBA3A5C50DF123456"}
+          vehicle_registration_series_number: {gt_value: "50 XY 987654"}
+          model_year: {gt_value: "2022"}
+          vehicle_category: {gt_value: "C"}
+          vehicle_body_number: {gt_value: "WBA3A5C50DF123456"}
+          engine_power: {gt_value: "245.0"}
+          max_weight: {gt_value: "3500.0"}
+          registration_plate: {gt_value: "B456CD50"}
+          color: {gt_value: "black"}
+          chassis: {gt_value: "X-CHASSIS-002"}
+          signature_box: {gt_value: [880, 800, 1170, 975]}

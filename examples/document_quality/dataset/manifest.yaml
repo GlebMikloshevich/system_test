@@ -1,0 +1,96 @@
+# Dataset format version 2: a named dataset whose samples each carry a unique
+# `sample_id`. The id is also stored next to the document in a "<stem>.id" file
+# (see sample_id.py) — that file is what gets POSTed with the document, and the
+# two must agree.
+#
+# Remove a sample with:  ingoread-test dataset remove <dataset uri> <sample id>
+
+# Each container's `kwargs` block is the per-document config sent to the API.
+#
+# With the default spread mode (IntegrationConfig.data_field_name is unset)
+# every key below becomes its own multipart form field on the create-task POST,
+# alongside the `file` field. Non-str values are JSON-encoded for transport
+# (e.g. checks=["has_signature", ...] is serialized to a JSON string).
+#
+# Example wire shape for doc_001.pdf:
+#   POST /integrations/document_quality_checks
+#     file=<binary>
+#     document_type=passport
+#     expected_language=ru
+#     prompt_variant=strict_v2
+#     min_confidence=0.85
+#     checks=["has_signature","has_stamp","has_photo","has_qr_code",
+#             "is_legible","correct_orientation","pages_intact","not_blurred"]
+
+version: 2
+name: document_quality
+samples:
+  - sample_id: doc_001
+    filename: doc_001.pdf
+    kwargs:
+      document_type: passport
+      expected_language: ru
+      prompt_variant: strict_v2
+      min_confidence: 0.85
+      checks: [has_signature, has_stamp, has_photo, has_qr_code, is_legible,
+               correct_orientation, pages_intact, not_blurred]
+    documents:
+      - doc_label: document_quality
+        page: 0
+        fields:
+          has_signature: {gt_value: "true"}
+          has_stamp: {gt_value: "true"}
+          has_photo: {gt_value: "true"}
+          has_qr_code: {gt_value: "false"}
+          is_legible: {gt_value: "true"}
+          correct_orientation: {gt_value: "true"}
+          pages_intact: {gt_value: "true"}
+          not_blurred: {gt_value: "true"}
+          scan_dpi: {gt_value: "300"}
+          detected_language: {gt_value: "ru"}
+
+  - sample_id: doc_002
+    filename: doc_002.pdf
+    kwargs:
+      document_type: driving_license
+      expected_language: en
+      prompt_variant: lenient_v1
+      min_confidence: 0.7
+      checks: [has_signature, has_stamp, is_legible, not_blurred]
+    documents:
+      - doc_label: document_quality
+        page: 0
+        fields:
+          has_signature: {gt_value: "false"}
+          has_stamp: {gt_value: "true"}
+          has_photo: {gt_value: "false"}
+          has_qr_code: {gt_value: "true"}
+          is_legible: {gt_value: "false"}
+          correct_orientation: {gt_value: "true"}
+          pages_intact: {gt_value: "true"}
+          not_blurred: {gt_value: "false"}
+          scan_dpi: {gt_value: "150"}
+          detected_language: {gt_value: "en"}
+
+  - sample_id: doc_003
+    filename: doc_003.pdf
+    kwargs:
+      document_type: vehicle_registration
+      expected_language: ru
+      prompt_variant: strict_v2
+      min_confidence: 0.9
+      checks: [has_signature, has_stamp, has_photo, is_legible, pages_intact]
+    documents:
+      - doc_label: document_quality
+        page: 0
+        fields:
+          has_signature: {gt_value: "true"}
+          has_stamp: {gt_value: "false"}
+          has_photo: {gt_value: "true"}
+          has_qr_code: {gt_value: "false"}
+          is_legible: {gt_value: "true"}
+          correct_orientation: {gt_value: "false"}
+          pages_intact: {gt_value: "true"}
+          not_blurred: {gt_value: "true"}
+          scan_dpi: {gt_value: "240"}
+          detected_language: {gt_value: "ru"}
