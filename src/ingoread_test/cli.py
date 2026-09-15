@@ -20,6 +20,7 @@ import typer
 from .config import load_configs, load_suite
 from .config.test_config import StorageConfig
 from .dataset import (
+    Dataset,
     DatasetLocation,
     DatasetManifest,
     RemovalReport,
@@ -30,22 +31,17 @@ from .dataset import (
     save_manifest,
 )
 from .dataset.bootstrap import result_to_manifest
-from .integration.factory import build_integration
 from .modules import (
-    JsonFileSink,
-    RunArtifacts,
-    compare_to_previous,
-    evaluate_release_gate,
+    EmptyDatasetError,
+    RunOutcome,
+    RunRequest,
     evaluate_suite_gate,
-    open_dataset,
+    execute_run,
     read_result,
-    render_html,
     render_suite_html,
     run_suite,
-    run_test,
-    score,
 )
-from .modules.logger_module import upload_run
+from .results.models import MeasurementsResult
 from .utils.s3 import open_s3_uri
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -82,39 +78,51 @@ def run(
     ),
 ) -> None:
     test_cfg, scorer_cfg = load_configs(config)
+    request = RunRequest(
+        test_cfg=test_cfg,
+        scorer_cfg=scorer_cfg,
+        exclude_sample_ids=tuple(exclude),
+        force_download=refresh,
+        baseline=None if no_history else previous,
+        local_dir=results_dir or test_cfg.results.local_dir,
+        render_report=not no_viz,
+        upload=not no_upload,
+    )
 
     try:
-        dataset = open_dataset(test_cfg, exclude_sample_ids=exclude, force_download=refresh)
-    except (OSError, ValueError) as exc:
-        raise typer.BadParameter(f"could not load dataset: {exc}") from exc
+        outcome = asyncio.run(
+            execute_run(request, on_dataset=_echo_dataset, on_result=_echo_result)
+        )
+    except EmptyDatasetError as exc:
+        typer.echo(f"ERROR: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    except (OSError, ValueError) as exc:  # bad dataset URI, missing url, ...
+        raise typer.BadParameter(str(exc)) from exc
 
+    _echo_artifacts(outcome)
+    if outcome.comparison is not None:
+        typer.echo(f"history_status={outcome.comparison.status.value}")
+        typer.echo(f"history_delta={outcome.comparison.overall_delta:+.4f}")
+        for note in outcome.comparison.notes:
+            typer.echo(f"history_note={note}")
+
+    for reason in outcome.reasons:
+        typer.echo(f"gate_block={reason}")
+    typer.echo(f"release_gate={'BLOCKED' if outcome.blocked else 'OK'}")
+    sys.exit(1 if outcome.blocked else 0)
+
+
+def _echo_dataset(dataset: Dataset) -> None:
+    """Announce what is about to be sent, before the backend is touched."""
     typer.echo(
         f"dataset={dataset.name} source={dataset.source_uri} "
         f"samples={len(dataset)} removed={len(dataset.removed_sample_ids)} "
         f"excluded={len(dataset.excluded_sample_ids)}"
     )
-    if not dataset.containers:
-        typer.echo(
-            "ERROR: the dataset has no samples left to run — every sample is removed or excluded.",
-            err=True,
-        )
-        raise typer.Exit(code=1)
 
-    try:
-        integration = build_integration(test_cfg)
-    except ValueError as exc:  # missing url etc. — a config problem, not a crash
-        raise typer.BadParameter(str(exc)) from exc
 
-    async def _run() -> tuple:
-        try:
-            outcome = await run_test(test_cfg, integration, dataset)
-        finally:
-            await integration.aclose()
-        return outcome
-
-    predictions, stats = asyncio.run(_run())
-    result = score(test_cfg, scorer_cfg, dataset, predictions, stats)
-
+def _echo_result(result: MeasurementsResult) -> None:
+    """Report the metrics as soon as they are scored, before publishing them."""
     typer.echo(
         f"scored_documents={len(result.document_results)} "
         f"overall_match_rate={result.match_rate:.3f} "
@@ -130,74 +138,27 @@ def run(
             "and ingoread responses."
         )
 
-    prev_result = None
-    if previous and not no_history:
-        prev_result = read_result(previous)
 
-    artifacts = RunArtifacts(results_dir or test_cfg.results.local_dir)
-    json_path = JsonFileSink(artifacts.path).write(result)
-    html_path = (
-        None
-        if no_viz
-        else render_html(
-            result,
-            artifacts.path,
-            previous=prev_result,
-            tolerance=test_cfg.history.match_rate_tolerance,
-        )
-    )
+def _echo_artifacts(outcome: RunOutcome) -> None:
+    """Where the run ended up: uploaded, kept locally, or discarded after upload."""
+    if outcome.uploaded_uri:
+        typer.echo(f"results_uploaded={outcome.uploaded_uri}")
+    if outcome.upload_error:
+        typer.echo(f"WARNING: results upload failed: {outcome.upload_error}", err=True)
 
-    folder_uri = None if no_upload else _upload(test_cfg, dataset.name, result, html_path)
-    if folder_uri:
-        typer.echo(f"results_uploaded={folder_uri}")
-    _report_local(artifacts, json_path, html_path, uploaded=folder_uri is not None)
-
-    comparison = None
-    if prev_result is not None:
-        comparison = compare_to_previous(result, prev_result, test_cfg.history)
-        typer.echo(f"history_status={comparison.status.value}")
-        typer.echo(f"history_delta={comparison.overall_delta:+.4f}")
-        for note in comparison.notes:
-            typer.echo(f"history_note={note}")
-
-    blocked, reasons = evaluate_release_gate(result, comparison, test_cfg.history)
-    for reason in reasons:
-        typer.echo(f"gate_block={reason}")
-    typer.echo(f"release_gate={'BLOCKED' if blocked else 'OK'}")
-    sys.exit(1 if blocked else 0)
-
-
-def _report_local(
-    artifacts: RunArtifacts,
-    json_path: Path,
-    html_path: Path | None,
-    *,
-    uploaded: bool,
-) -> None:
-    """Report the local copy, or say it was discarded once the run was uploaded."""
-    discarded = artifacts.discard(uploaded=uploaded)
-    if discarded is not None:
-        typer.echo(f"results_local_discarded={discarded}")
+    if outcome.discarded_dir is not None:
+        typer.echo(f"results_local_discarded={outcome.discarded_dir}")
         return
 
-    typer.echo(f"results_json={json_path.resolve()}")
-    if html_path is not None:
-        typer.echo(f"results_html={html_path.resolve()}")
-    if not artifacts.keep:
+    typer.echo(f"results_json={outcome.json_path.resolve()}")
+    if outcome.html_path is not None:
+        typer.echo(f"results_html={outcome.html_path.resolve()}")
+    if not outcome.kept_local:
         typer.echo(
             "WARNING: the run was not uploaded, so the temporary local copy was kept. "
             "Set test.results.uri to publish runs to S3.",
             err=True,
         )
-
-
-def _upload(test_cfg, dataset_name: str, result, html_path: Path | None) -> str | None:
-    """Upload the run, reporting an upload failure without losing the gate verdict."""
-    try:
-        return upload_run(test_cfg, dataset_name, result, html_path=html_path)
-    except Exception as exc:  # noqa: BLE001 - the local artifacts and the gate still stand
-        typer.echo(f"WARNING: results upload failed: {exc}", err=True)
-        return None
 
 
 @app.command()

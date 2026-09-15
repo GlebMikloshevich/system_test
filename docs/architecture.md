@@ -38,8 +38,12 @@ s3://dataset/ ─▶ load_dataset ─▶ Dataset (samples ▸ documents ▸ fiel
                           evaluate_release_gate ─▶ exit 0 | 1
 ```
 
-The orchestration lives in [`cli.py`](../src/ingoread_test/cli.py); everything
-else is a library module it calls.
+One dataset's journey through that pipeline is
+[`run_module.execute_run`](../src/ingoread_test/modules/run_module.py), which
+both `run` and `suite` call — the two commands differ in how they report
+progress and what they do with a failure, not in what they do.
+[`cli.py`](../src/ingoread_test/cli.py) holds only the Typer surface and the
+`key=value` output.
 
 ---
 
@@ -74,6 +78,7 @@ src/ingoread_test/
 │   ├── evaluator.py       # compare_models() / score_document_pair()
 │   └── pairing.py         # stickler's Hungarian GT↔prediction matching
 ├── modules/
+│   ├── run_module.py      # execute_run(): one dataset, config → release verdict
 │   ├── test_module.py     # run_test(): async batched prediction + TestRunStats
 │   ├── scorer_module.py   # score(): aggregate pairs into MeasurementsResult
 │   ├── historical_scorer.py # compare_to_previous() + evaluate_release_gate()
@@ -172,6 +177,26 @@ walks each container, pairs GT and predicted documents per `doc_label`, then
 aggregates. It also emits warnings for labels with no scorer config, configs
 that never matched, and COMPLETED-but-empty predictions. Output is a
 `MeasurementsResult`.
+
+### 5.4a One run, one pipeline — `modules/run_module.py`
+`execute_run(RunRequest)` is the whole sequence: open the dataset, send it,
+score it, load the baseline, write and publish the artifacts, decide the gate.
+It returns a `RunOutcome` carrying the result, the comparison, the verdict and
+where the artifacts ended up.
+
+Two things stay with the caller, because they are policy rather than sequence:
+
+- **Progress.** `on_dataset` / `on_result` callbacks fire as soon as the dataset
+  is known and as soon as it is scored, so `run` can print during a long run
+  while `suite` stays silent.
+- **Failure.** `execute_run` raises — `EmptyDatasetError` when every sample is
+  removed or excluded, and whatever loading the dataset or building the
+  integration raises. `run` turns those into a usage error and a non-zero exit;
+  `suite` turns them into one blocked member and carries on.
+
+A baseline that was configured but can't be read is not raised: it comes back
+as a gate reason, so the run's own metrics survive and the release still
+blocks.
 
 ### 5.5 Reporting + gate
 `JsonFileSink.write` and `render_html` persist the result locally, and

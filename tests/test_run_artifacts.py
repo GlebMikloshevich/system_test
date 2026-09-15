@@ -8,6 +8,7 @@ import yaml
 from typer.testing import CliRunner
 
 from ingoread_test import cli
+from ingoread_test.modules import run_module
 from ingoread_test.modules.logger_module import RunArtifacts
 
 runner = CliRunner()
@@ -89,7 +90,7 @@ def test_run_removes_the_local_copy_after_uploading(tmp_path, monkeypatch):
         assert html_path is not None and html_path.is_file(), "html must exist to be uploaded"
         return f"s3://ingoread-results/runs/{dataset_name}/ingoread/2026-09-15/120000"
 
-    monkeypatch.setattr(cli, "upload_run", fake_upload)
+    monkeypatch.setattr(run_module, "upload_run", fake_upload)
     config = _config(tmp_path, uri="s3://ingoread-results/runs")
 
     result = runner.invoke(cli.app, ["run", str(config)])
@@ -102,7 +103,7 @@ def test_run_removes_the_local_copy_after_uploading(tmp_path, monkeypatch):
 
 
 def test_run_keeps_the_local_copy_when_a_directory_was_asked_for(tmp_path, monkeypatch):
-    monkeypatch.setattr(cli, "upload_run", lambda *args, **kwargs: "s3://runs/x")
+    monkeypatch.setattr(run_module, "upload_run", lambda *args, **kwargs: "s3://runs/x")
     config = _config(tmp_path, uri="s3://ingoread-results/runs")
     out_dir = tmp_path / "keep"
 
@@ -117,7 +118,7 @@ def test_run_keeps_the_local_copy_when_the_upload_fails(tmp_path, monkeypatch):
     def failing_upload(*args, **kwargs):
         raise RuntimeError("bucket unreachable")
 
-    monkeypatch.setattr(cli, "upload_run", failing_upload)
+    monkeypatch.setattr(run_module, "upload_run", failing_upload)
     config = _config(tmp_path, uri="s3://ingoread-results/runs")
 
     result = runner.invoke(cli.app, ["run", str(config), "--no-viz"])
