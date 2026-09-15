@@ -13,11 +13,14 @@ Requires Python ≥ 3.12.
 
 ```bash
 # with uv (recommended)
-uv sync --extra dev
+uv sync --extra test
 
-# or with pip (editable install + dev tools)
-pip install -e ".[dev]"
+# or with pip (editable install + test tools)
+pip install -e ".[test]"
 ```
+
+The declared extras are `test` (pytest), `llm` (`field_type: llm_text`) and
+`semantic` (`comparator: SemanticComparator`). There is no `dev` extra.
 
 After install the CLI is available two ways:
 
