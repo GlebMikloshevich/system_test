@@ -81,15 +81,43 @@ class DocumentGT(BaseModel):
 
 
 class DocumentContainer(BaseModel):
+    """One sample at runtime: the file to send plus the ground truth for it.
+
+    ``sample_id`` is the sample's stable identity — it keys predictions and
+    results (two samples may share a filename), it is sent to the integration
+    alongside the document, and it is how a person asks for the sample to be
+    removed. It comes from the sample's identifier file, falling back to the
+    manifest; see :mod:`ingoread_test.dataset.sample_id`.
+    """
+
+    sample_id: str = ""
     filename: str
     file_path: Path | None = None
+    id_file_path: Path | None = None
     kwargs: dict = Field(default_factory=dict)
     documents: list[DocumentGT] = Field(default_factory=list)
     group_id: Hashable | None = None
 
+    @property
+    def key(self) -> str:
+        """The identity used to key predictions and results."""
+
+        return self.sample_id or self.filename
+
 
 class Dataset(BaseModel):
+    """The samples a run will actually send, plus where they came from.
+
+    Removed samples are not in ``containers`` — they never reach an integration.
+    ``removed_sample_ids`` keeps their count and ids for the run's report.
+    """
+
+    name: str = ""
+    source_uri: str = ""
+    manifest_uri: str = ""
     containers: list[DocumentContainer] = Field(default_factory=list)
+    removed_sample_ids: list[str] = Field(default_factory=list)
+    excluded_sample_ids: list[str] = Field(default_factory=list)
 
     def __iter__(self):  # type: ignore[override]
         return iter(self.containers)

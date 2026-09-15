@@ -1,0 +1,71 @@
+test:
+  name: vehicle_registration
+  dataset:
+    # Datasets live in S3; a local directory works the same way and keeps this
+    # example runnable without a bucket:
+    #   uri: s3://ingoread-datasets/vehicle_registration
+    uri: examples/vehicle_registration/dataset
+    # manifest: manifest.yaml     # default, read from inside the dataset
+    # cache_dir: .cache/ingoread-datasets
+    # exclude_sample_ids: []      # skipped every run; use `dataset remove` to
+    #                             # take a sample out of the dataset for good
+  integration_name: ingoread
+  batch_size: 4
+  timeout: 60
+  integration:
+    kind: stub
+  results:
+    # Results belong in S3; the local copy is staging space that is removed once
+    # a run is uploaded. This example has no bucket, so it keeps its files here:
+    local_dir: results
+    # Uploads to <uri>/<dataset name>/<integration>/<date>/<time>/result.json:
+    # uri: s3://ingoread-results/runs
+    upload_html: true
+  history:
+    match_rate_tolerance: 0.02
+    fail_on_regression: true
+
+scorer:
+  name: vehicle_registration
+  measurement_configs:
+    - doc_label: vehicle_registration
+      multipage_matching: true
+      fields:
+        # 17-char identifier — partial credit (CER/WER) is useful when OCR slips a digit.
+        - field_name: vin
+          field_type: text
+
+        # Series + number printed together; OCR-prone so use TEXT.
+        - field_name: vehicle_registration_series_number
+          field_type: text
+
+        # Year is a discrete value — exact match only.
+        - field_name: model_year
+          field_type: literal
+
+        # Category is an enum-ish code (A/B/C/D/...) — exact match.
+        - field_name: vehicle_category
+          field_type: literal
+
+        - field_name: vehicle_body_number
+          field_type: text
+
+        - field_name: engine_power
+          field_type: number
+
+        - field_name: max_weight
+          field_type: number
+
+        - field_name: registration_plate
+          field_type: text
+
+        - field_name: color
+          field_type: text
+
+        - field_name: chassis
+          field_type: text
+
+        # Field-level bbox — uses IoU; threshold overridable per-field/per-sample.
+        - field_name: signature_box
+          field_type: bbox
+          measurer_kwargs: {iou_threshold: 0.5}

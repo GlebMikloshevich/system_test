@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>vehicle_registration_nightly · ingoread-test report</title>
+<style>
+:root{
+  --panel:#ffffff; --ink:#1f2937; --muted:#6b7280; --line:#e7eaf0;
+  --good:#10b981; --warn:#f59e0b; --bad:#ef4444; --accent:#6366f1; --soft:#f7f9fc;
+  --shadow:0 1px 3px rgba(16,24,40,.06),0 1px 2px rgba(16,24,40,.04);
+}
+*{box-sizing:border-box}
+body{margin:0;background:#eaeef5;color:var(--ink);
+  font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+.wrap{max-width:1060px;margin:0 auto;padding:30px 20px 64px}
+header{background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#fff;
+  padding:28px 30px;border-radius:18px;box-shadow:0 14px 34px rgba(79,70,229,.28);
+  position:relative;overflow:hidden}
+header::after{content:"";position:absolute;right:-60px;top:-60px;width:220px;height:220px;
+  background:radial-gradient(circle,rgba(255,255,255,.18),transparent 70%)}
+.eyebrow{text-transform:uppercase;letter-spacing:.14em;font-size:11px;opacity:.85}
+header h1{margin:6px 0 8px;font-size:29px;font-weight:750;letter-spacing:-.01em}
+header .sub{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:13px;opacity:.92}
+header .sub .sep{opacity:.5}
+.banner{display:flex;align-items:center;gap:12px;margin:18px 0;padding:14px 18px;
+  border-radius:13px;font-size:14px;border:1px solid;box-shadow:var(--shadow)}
+.banner.good{background:#ecfdf5;border-color:#a7f3d0;color:#065f46}
+.banner.bad{background:#fef2f2;border-color:#fecaca;color:#991b1b}
+.banner.warn{background:#fffbeb;border-color:#fde68a;color:#92400e}
+.banner .ico{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-weight:800;color:#fff;flex:0 0 auto;font-size:14px}
+.banner.good .ico{background:var(--good)} .banner.bad .ico{background:var(--bad)}
+.banner.warn .ico{background:var(--warn)}
+.hero{display:flex;gap:16px;align-items:stretch;flex-wrap:wrap;margin:18px 0}
+.gauge-card{background:var(--panel);border:1px solid var(--line);border-radius:16px;
+  padding:18px 22px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  min-width:210px;box-shadow:var(--shadow)}
+.gauge{display:block}
+.g-track{fill:none;stroke:#eef1f7;stroke-width:12}
+.g-val{fill:none;stroke-width:12;stroke-linecap:round;animation:draw 1.1s ease-out}
+.g-val.good{stroke:var(--good)} .g-val.warn{stroke:var(--warn)} .g-val.bad{stroke:var(--bad)}
+@keyframes draw{from{stroke-dasharray:0 999}}
+.g-pct{fill:var(--ink);font-size:25px;font-weight:800;text-anchor:middle;dominant-baseline:middle}
+.g-cap{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.06em;margin-top:8px}
+.g-delta{margin-top:6px}
+.cards{flex:1;display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+  gap:13px;margin:0;align-content:start}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:13px;
+  padding:14px 16px;box-shadow:var(--shadow);transition:transform .14s ease,box-shadow .14s ease}
+.card:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(16,24,40,.08)}
+.card-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.card-value{font-size:23px;font-weight:700;margin-top:5px}
+.card-hint{font-size:11px;color:var(--muted);margin-top:2px}
+.big{font-size:30px;font-weight:800}
+.good{color:var(--good)} .warn{color:var(--warn)} .bad{color:var(--bad)}
+.delta{font-size:12px;font-weight:600;white-space:nowrap;vertical-align:middle}
+.delta.up{color:var(--good)} .delta.down{color:var(--bad)}
+.delta.same{color:var(--muted)} .delta.new{color:var(--accent)}
+section{margin:26px 0}
+h2{font-size:18px;font-weight:700;margin:0 0 14px;display:flex;align-items:center;gap:10px}
+h2::before{content:"";width:4px;height:18px;border-radius:3px;
+  background:linear-gradient(var(--accent),#8b5cf6)}
+.count{background:#eef2ff;color:#4338ca;font-size:12px;border-radius:999px;
+  padding:1px 9px;font-weight:700}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+  overflow:hidden;box-shadow:var(--shadow)}
+.doc{background:var(--panel);border:1px solid var(--line);border-radius:16px;
+  padding:18px 22px;box-shadow:var(--shadow)}
+.doc-head{display:flex;justify-content:space-between;align-items:center;
+  gap:16px;flex-wrap:wrap;margin-bottom:12px}
+.doc-head h2{margin:0}
+.doc-meta{display:flex;align-items:center;gap:12px;min-width:240px}
+table.grid{width:100%;border-collapse:collapse;font-size:14px}
+table.grid th{text-align:left;color:var(--muted);font-weight:600;font-size:11px;
+  text-transform:uppercase;letter-spacing:.04em;padding:9px 12px;
+  border-bottom:1px solid var(--line);background:var(--soft)}
+table.grid td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+table.grid tbody tr:last-child td{border-bottom:none}
+table.grid tbody tr:nth-child(even){background:#fbfcfe}
+table.grid tbody tr:hover{background:#f2f5fb}
+.doc table.grid,.file table.grid{margin-top:2px}
+table.inner{margin-top:10px}
+.bar-cell{width:220px}
+.bar{position:relative;background:#edf0f6;border-radius:8px;height:20px;width:200px;
+  overflow:hidden;box-shadow:inset 0 1px 2px rgba(16,24,40,.06)}
+.bar-fill{position:absolute;left:0;top:0;bottom:0;border-radius:8px;
+  transform-origin:left;animation:grow .7s cubic-bezier(.2,.8,.2,1)}
+@keyframes grow{from{transform:scaleX(0)}}
+.bar-fill.good{background:linear-gradient(90deg,#059669,#34d399)}
+.bar-fill.warn{background:linear-gradient(90deg,#d97706,#fbbf24)}
+.bar-fill.bad{background:linear-gradient(90deg,#dc2626,#f87171)}
+.bar-label{position:relative;z-index:1;font-size:12px;font-weight:700;
+  line-height:20px;padding-left:9px;color:#11261f;mix-blend-mode:luminosity}
+.badge{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600}
+.badge.good{background:#ecfdf5;color:#047857} .badge.bad{background:#fef2f2;color:#b91c1c}
+.pill{background:#eef2ff;color:#4338ca;border-radius:999px;padding:2px 10px;
+  font-size:12px;font-weight:600}
+.type{background:#eef1f6;color:#334155;border-radius:6px;padding:2px 8px;font-size:12px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{background:#eef1f6;border-radius:6px;padding:2px 8px;font-size:12px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#334155}
+.chip b{color:#0f172a;margin-right:5px;font-weight:700}
+.chip.good{background:#ecfdf5;color:#047857} .chip.bad{background:#fef2f2;color:#b91c1c}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px}
+.num,.grid td.num{text-align:right;font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+details.file{background:var(--panel);border:1px solid var(--line);border-radius:13px;
+  padding:2px 16px;margin:10px 0;box-shadow:var(--shadow)}
+details.file summary{cursor:pointer;padding:12px 4px;display:flex;align-items:center;
+  gap:10px;flex-wrap:wrap;list-style:none}
+details.file summary::-webkit-details-marker{display:none}
+details.file summary::before{content:"▸";color:var(--muted);transition:transform .15s ease;
+  display:inline-block}
+details.file[open] summary::before{transform:rotate(90deg)}
+details.file[open]{box-shadow:0 6px 18px rgba(16,24,40,.07)}
+footer{margin-top:42px;color:var(--muted);font-size:12px;text-align:center}
+@media (max-width:560px){.gauge-card{width:100%}}
+</style></head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="eyebrow">ingoread-test report</div>
+    <h1>vehicle_registration_nightly</h1>
+    <div class="sub"><span>scorer: vrc_v3</span><span class='sep'>·</span><span>2026-06-27 11:30 UTC</span><span class='sep'>·</span><span>compared to previous (unchanged ≤ ±2pp)</span></div>
+  </header>
+  <div class='banner bad'><span class='ico'>!</span><span><b>Errors present</b> — 1 failed, 1 timed out. A pre-release gate would block this run.</span></div>
+  <section class="hero">
+    <div class='gauge-card'><svg class='gauge' viewBox='0 0 120 120' width='150' height='150' role='img'><circle class='g-track' cx='60' cy='60' r='52'></circle><circle class='g-val warn' cx='60' cy='60' r='52' stroke-dasharray='265.3 326.7' transform='rotate(-90 60 60)'></circle><text class='g-pct' x='60' y='62'>81.2%</text></svg><div class='g-cap'>overall match rate</div><div class='g-delta'><span class='delta up' title='better than previous'>▲ +2.2pp</span></div></div>
+    <div class="cards"><div class='card'><div class='card-label'>Document types</div><div class='card-value'>2</div></div><div class='card'><div class='card-label'>Documents scored</div><div class='card-value'>32</div></div><div class='card'><div class='card-label'>Files</div><div class='card-value'>4</div></div><div class='card'><div class='card-label'>Failed</div><div class='card-value'><span class='bad'>1</span></div></div><div class='card'><div class='card-label'>Timeouts</div><div class='card-value'><span class='bad'>1</span></div></div><div class='card'><div class='card-label'>Total time</div><div class='card-value'>84.60s</div></div><div class='card'><div class='card-label'>Time / sample</div><div class='card-value'>2.640s</div></div></div>
+  </section>
+  <section class='doc'><div class='doc-head'><h2>vehicle_registration</h2><div class='doc-meta'><div class='bar'><div class='bar-fill warn' style='width:75.0%'></div><span class='bar-label'>75.0%</span></div><span class='pill'>n = 12</span><span class='delta up' title='better than previous'>▲ +5.0pp</span></div></div><table class='grid'><thead><tr><th>Field</th><th>Type</th><th>Match rate</th><th>Mean metrics</th><th>vs prev</th></tr></thead><tbody><tr><td class='mono'>vin</td><td><span class='type'>text</span></td><td class='bar-cell'><div class='bar'><div class='bar-fill good' style='width:92.0%'></div><span class='bar-label'>92.0%</span></div></td><td><div class='chips'><span class='chip'><b>cer</b>0.031</span><span class='chip'><b>wer</b>0.05</span></div></td><td><span class='delta down' title='worse than previous'>▼ -4.0pp</span></td></tr><tr><td class='mono'>engine_power</td><td><span class='type'>number</span></td><td class='bar-cell'><div class='bar'><div class='bar-fill warn' style='width:83.0%'></div><span class='bar-label'>83.0%</span></div></td><td><div class='chips'><span class='chip'><b>mae</b>1.42</span><span class='chip'><b>mse</b>9.18</span></div></td><td><span class='delta up' title='better than previous'>▲ +12.0pp</span></td></tr><tr><td class='mono'>vehicle_category</td><td><span class='type'>literal</span></td><td class='bar-cell'><div class='bar'><div class='bar-fill good' style='width:100.0%'></div><span class='bar-label'>100.0%</span></div></td><td><div class='chips'><span class='chip'><b>accuracy</b>1</span></div></td><td><span class='delta same' title='within ±2pp'>≈ +0.0pp</span></td></tr><tr><td class='mono'>monitoring</td><td><span class='type'>bool</span></td><td class='bar-cell'><div class='bar'><div class='bar-fill good' style='width:91.0%'></div><span class='bar-label'>91.0%</span></div></td><td><div class='chips'><span class='chip'><b>accuracy</b>0.91</span></div></td><td><span class='delta same' title='within ±2pp'>≈ +1.0pp</span></td></tr><tr><td class='mono'>signature_box</td><td><span class='type'>bbox</span></td><td class='bar-cell'><div class='bar'><div class='bar-fill warn' style='width:78.0%'></div><span class='bar-label'>78.0%</span></div></td><td><div class='chips'><span class='chip'><b>iou</b>0.81</span></div></td><td><span class='delta up' title='better than previous'>▲ +16.0pp</span></td></tr><tr><td class='mono'>stamps</td><td><span class='type'>bbox_set</span></td><td class='bar-cell'><div class='bar'><div class='bar-fill bad' style='width:66.0%'></div><span class='bar-label'>66.0%</span></div></td><td><div class='chips'><span class='chip'><b>iou</b>0.74</span><span class='chip'><b>count_gt</b>2</span><span class='chip'><b>count_pred</b>2</span><span class='chip'><b>count_match</b>0.83</span><span class='chip'><b>precision</b>0.78</span><span class='chip'><b>recall</b>0.8</span></div></td><td><span class='delta up' title='better than previous'>▲ +26.0pp</span></td></tr></tbody></table></section><section class='doc'><div class='doc-head'><h2>invoice</h2><div class='doc-meta'><div class='bar'><div class='bar-fill good' style='width:90.0%'></div><span class='bar-label'>90.0%</span></div><span class='pill'>n = 20</span><span class='delta down' title='worse than previous'>▼ -3.0pp</span></div></div><table class='grid'><thead><tr><th>Field</th><th>Type</th><th>Match rate</th><th>Mean metrics</th><th>vs prev</th></tr></thead><tbody><tr><td class='mono'>total</td><td><span class='type'>number</span></td><td class='bar-cell'><div class='bar'><div class='bar-fill good' style='width:95.0%'></div><span class='bar-label'>95.0%</span></div></td><td><div class='chips'><span class='chip'><b>mae</b>0.04</span><span class='chip'><b>mse</b>0.01</span></div></td><td><span class='delta same' title='within ±2pp'>≈ +0.0pp</span></td></tr><tr><td class='mono'>vendor</td><td><span class='type'>text</span></td><td class='bar-cell'><div class='bar'><div class='bar-fill warn' style='width:88.0%'></div><span class='bar-label'>88.0%</span></div></td><td><div class='chips'><span class='chip'><b>cer</b>0.06</span><span class='chip'><b>wer</b>0.09</span></div></td><td><span class='delta down' title='worse than previous'>▼ -6.0pp</span></td></tr><tr><td class='mono'>paid</td><td><span class='type'>bool</span></td><td class='bar-cell'><div class='bar'><div class='bar-fill good' style='width:97.0%'></div><span class='bar-label'>97.0%</span></div></td><td><div class='chips'><span class='chip'><b>accuracy</b>0.97</span></div></td><td><span class='delta new' title='not present in the previous run'>new</span></td></tr></tbody></table></section>
+  <section><h2>Errors &amp; timeouts <span class='count'>1</span></h2><div class='panel'><table class='grid'><thead><tr><th>File</th><th>Status</th><th>Error</th><th>Time</th></tr></thead><tbody><tr><td class='mono'>vrc_003.pdf</td><td><span class='badge bad'>FAILED</span></td><td>OCR engine crashed (exit 137)</td><td class='num'>30.00s</td></tr></tbody></table></div></section>
+  <section><h2>Per-file breakdown <span class='count'>4</span></h2><p class='muted'>Green chips = field matched, red = missed. Click a file to expand.</p><details class='file'><summary><span class='mono'>vrc_001.pdf</span> <span class='badge good'>COMPLETED</span> <span class='muted'>1/1 docs matched · 2.31s</span></summary><table class='grid inner'><thead><tr><th>Document</th><th>Result</th><th>Fields</th></tr></thead><tbody><tr><td>vehicle_registration</td><td><span class='badge good'>matched</span></td><td><span class='chip good'>vin</span><span class='chip good'>engine_power</span><span class='chip good'>vehicle_category</span><span class='chip good'>monitoring</span><span class='chip good'>signature_box</span><span class='chip good'>stamps</span></td></tr></tbody></table></details><details class='file'><summary><span class='mono'>vrc_002.pdf</span> <span class='badge good'>COMPLETED</span> <span class='muted'>0/1 docs matched · 2.88s</span></summary><table class='grid inner'><thead><tr><th>Document</th><th>Result</th><th>Fields</th></tr></thead><tbody><tr><td>vehicle_registration</td><td><span class='badge bad'>missed</span></td><td><span class='chip good'>vin</span><span class='chip bad'>engine_power</span><span class='chip good'>vehicle_category</span><span class='chip good'>monitoring</span><span class='chip good'>signature_box</span><span class='chip bad'>stamps</span></td></tr></tbody></table></details><details class='file'><summary><span class='mono'>vrc_003.pdf</span> <span class='badge bad'>FAILED</span> <span class='muted'>0/1 docs matched · 30.00s</span></summary><table class='grid inner'><thead><tr><th>Document</th><th>Result</th><th>Fields</th></tr></thead><tbody><tr><td>vehicle_registration <span class='muted'>(missed)</span></td><td><span class='badge bad'>missed</span></td><td><span class='chip bad'>vin</span><span class='chip bad'>engine_power</span><span class='chip bad'>vehicle_category</span><span class='chip bad'>monitoring</span><span class='chip bad'>signature_box</span><span class='chip bad'>stamps</span></td></tr></tbody></table></details><details class='file'><summary><span class='mono'>invoice_017.pdf</span> <span class='badge good'>COMPLETED</span> <span class='muted'>1/2 docs matched · 1.12s</span></summary><table class='grid inner'><thead><tr><th>Document</th><th>Result</th><th>Fields</th></tr></thead><tbody><tr><td>invoice</td><td><span class='badge good'>matched</span></td><td><span class='chip good'>total</span><span class='chip good'>vendor</span><span class='chip good'>paid</span></td></tr><tr><td>invoice <span class='muted'>(hallucinated)</span></td><td><span class='badge bad'>missed</span></td><td><span class=muted>—</span></td></tr></tbody></table></details></section>
+  <footer>Generated by ingoread-test · match rate = fraction of documents where
+    every scored field matched.</footer>
+</div>
+</body></html>

@@ -22,16 +22,23 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import yaml
 
 from .scorer_config import ScorerConfig
+from .suite_config import SuiteConfig
 from .test_config import TestConfig
 
 
-def load_configs(path: Path) -> tuple[TestConfig, ScorerConfig]:
+def _read_structured(path: Path) -> Any:
+    """Parse a config file as YAML or JSON, chosen by its suffix."""
     text = path.read_text(encoding="utf-8")
-    raw = yaml.safe_load(text) if path.suffix in {".yaml", ".yml"} else json.loads(text)
+    return yaml.safe_load(text) if path.suffix in {".yaml", ".yml"} else json.loads(text)
+
+
+def load_configs(path: Path) -> tuple[TestConfig, ScorerConfig]:
+    raw = _read_structured(path)
 
     if not isinstance(raw, dict):
         raise ValueError(
@@ -52,3 +59,26 @@ def load_configs(path: Path) -> tuple[TestConfig, ScorerConfig]:
     test_cfg = TestConfig.model_validate(raw["test"])
     scorer_cfg = ScorerConfig.model_validate(raw["scorer"])
     return test_cfg, scorer_cfg
+
+
+def load_suite(path: Path) -> SuiteConfig:
+    """Load a suite config, resolving member paths relative to the suite file.
+
+    Writing `config: vehicle_registration/config.yaml` in a suite should mean
+    "next to this suite file", not "relative to wherever the CLI was invoked",
+    so each member's `config`/`baseline` is anchored to the suite's directory.
+    """
+    raw = _read_structured(path)
+    if not isinstance(raw, dict):
+        raise ValueError(
+            f"Suite config {path} must be a mapping with a 'datasets' key; "
+            f"got top-level type {type(raw).__name__}"
+        )
+
+    suite = SuiteConfig.model_validate(raw)
+    base_dir = path.parent
+    for dataset in suite.datasets:
+        dataset.config = (base_dir / dataset.config).resolve()
+        if dataset.baseline is not None:
+            dataset.baseline = (base_dir / dataset.baseline).resolve()
+    return suite

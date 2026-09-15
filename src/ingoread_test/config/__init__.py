@@ -1,4 +1,4 @@
-from .loader import load_configs
+from .loader import load_configs, load_suite
 from .scorer_config import (
     DocumentMeasurerConfig,
     FieldConfig,
@@ -6,16 +6,30 @@ from .scorer_config import (
     PredictionSelection,
     ScorerConfig,
 )
-from .test_config import HistoryConfig, IntegrationKind, TestConfig
+from .suite_config import DatasetRef, SuiteConfig
+from .test_config import (
+    DatasetConfig,
+    HistoryConfig,
+    IntegrationKind,
+    ResultsConfig,
+    StorageConfig,
+    TestConfig,
+)
 
 __all__ = [
+    "DatasetConfig",
+    "DatasetRef",
     "DocumentMeasurerConfig",
     "FieldConfig",
     "FieldType",
     "HistoryConfig",
     "IntegrationKind",
     "PredictionSelection",
+    "ResultsConfig",
     "ScorerConfig",
+    "StorageConfig",
+    "SuiteConfig",
     "TestConfig",
     "load_configs",
+    "load_suite",
 ]

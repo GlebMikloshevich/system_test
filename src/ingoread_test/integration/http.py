@@ -5,12 +5,18 @@ Protocol (per user spec):
 - GET  {base_url}/status/{task_id} returns {"status": ..., "result": {IngoreadFileResult-shaped}}
 
 Status strings are normalized: 'completed' → FINISHED, 'queues' → QUEUED, etc.
+
+Every create-task request carries the sample's unique identifier — the one
+stored in the sample's id file — in its own form field (``sample_id_field``,
+default ``sample_id``), so a backend can tie its own records back to the exact
+sample that produced them.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from pathlib import Path
 from typing import Any
@@ -20,6 +26,8 @@ import httpx
 from ..dataset.models import DocumentContainer
 from .base import Integration
 from .schemas import IngoreadFileResult, IngoreadStatus
+
+logger = logging.getLogger(__name__)
 
 _STATUS_MAP = {
     "queued": IngoreadStatus.QUEUED,
@@ -43,6 +51,7 @@ class HttpIngoreadIntegration(Integration):
         poll_interval: float = 1.0,
         poll_timeout: float | None = None,
         data_field_name: str | None = None,
+        sample_id_field: str | None = "sample_id",
         send_file: bool = True,
         client: httpx.AsyncClient | None = None,
     ) -> None:
@@ -53,6 +62,8 @@ class HttpIngoreadIntegration(Integration):
         self.poll_interval = poll_interval
         self.poll_timeout = poll_timeout
         self.data_field_name = data_field_name
+        # Form field carrying the sample's unique id; None sends no identifier.
+        self.sample_id_field = sample_id_field
         # When False (the `string` kind), no file is read/sent — the input lives
         # entirely in the container's kwargs.
         self.send_file = send_file
@@ -105,18 +116,15 @@ class HttpIngoreadIntegration(Integration):
         parsed.time = time.perf_counter() - start
         return parsed
 
-    async def _create_task(
-        self, container: DocumentContainer, kwargs: dict | None
-    ) -> str:
+    async def _create_task(self, container: DocumentContainer, kwargs: dict | None) -> str:
         merged_kwargs = {**(kwargs or {}), **container.kwargs}
         data = self._build_data(merged_kwargs)
+        data.update(self._sample_id_data(container))
         url = f"{self.base_url}/api/integrations/{self.integration_name}"
 
         if self.send_file:
             if container.file_path is None or not Path(container.file_path).exists():
-                raise FileNotFoundError(
-                    f"container {container.filename} has no readable file_path"
-                )
+                raise FileNotFoundError(f"container {container.filename} has no readable file_path")
             files = {"file": (container.filename, Path(container.file_path).read_bytes())}
             response = await self._client.post(url, files=files, data=data)
         else:
@@ -128,6 +136,23 @@ class HttpIngoreadIntegration(Integration):
         if not task_id:
             raise RuntimeError(f"create-task response missing task_id: {body!r}")
         return str(task_id)
+
+    def _sample_id_data(self, container: DocumentContainer) -> dict[str, str]:
+        """The sample identifier as its own form field.
+
+        It stays outside the kwargs payload — including in SINGLE-BLOB mode —
+        because it identifies the sample rather than configuring the request.
+        """
+        if not self.sample_id_field:
+            return {}
+        if not container.sample_id:
+            logger.warning(
+                "sample %s has no sample_id; sending the request without %s",
+                container.filename,
+                self.sample_id_field,
+            )
+            return {}
+        return {self.sample_id_field: container.sample_id}
 
     def _build_data(self, merged_kwargs: dict) -> dict[str, str]:
         """Build the multipart `data` payload from per-document kwargs.
@@ -142,17 +167,12 @@ class HttpIngoreadIntegration(Integration):
             return {}
         if self.data_field_name is not None:
             return {self.data_field_name: json.dumps(merged_kwargs)}
-        return {
-            k: v if isinstance(v, str) else json.dumps(v)
-            for k, v in merged_kwargs.items()
-        }
+        return {k: v if isinstance(v, str) else json.dumps(v) for k, v in merged_kwargs.items()}
 
     async def _poll_until_terminal(self, task_id: str) -> dict:
         url = f"{self.base_url}/api/status/{task_id}"
         deadline = (
-            time.perf_counter() + self.poll_timeout
-            if self.poll_timeout is not None
-            else None
+            time.perf_counter() + self.poll_timeout if self.poll_timeout is not None else None
         )
         while True:
             response = await self._client.get(url)
@@ -163,7 +183,6 @@ class HttpIngoreadIntegration(Integration):
                 return payload
             if deadline is not None and time.perf_counter() >= deadline:
                 raise TimeoutError(
-                    f"task {task_id} still {status.value} after "
-                    f"{self.poll_timeout}s poll_timeout"
+                    f"task {task_id} still {status.value} after {self.poll_timeout}s poll_timeout"
                 )
             await asyncio.sleep(self.poll_interval)
