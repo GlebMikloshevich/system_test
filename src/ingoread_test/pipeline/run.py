@@ -1,4 +1,4 @@
-"""RunModule — one dataset, from config to release verdict.
+"""One dataset, from config to release verdict.
 
 `run` and `suite` are the same pipeline with different reporting: load the
 dataset, send it through the integration, score it, persist and publish the
@@ -21,14 +21,13 @@ from pathlib import Path
 from ..config.scorer_config import ScorerConfig
 from ..config.test_config import TestConfig
 from ..dataset import Dataset
+from ..gate import compare_to_previous, evaluate_release_gate
 from ..integration.factory import build_integration
+from ..integration.runner import run_test
+from ..reporting import JsonFileSink, RunArtifacts, read_result, render_html, upload_run
 from ..results.models import ComparativeResult, MeasurementsResult
-from .dataset_module import open_dataset
-from .historical_scorer import compare_to_previous, evaluate_release_gate
-from .logger_module import JsonFileSink, RunArtifacts, read_result, upload_run
-from .scorer_module import score
-from .test_module import run_test
-from .visualization_module import render_html
+from ..scoring.aggregate import score
+from .dataset import open_dataset
 
 logger = logging.getLogger(__name__)
 

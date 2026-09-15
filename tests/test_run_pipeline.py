@@ -12,8 +12,8 @@ from typer.testing import CliRunner
 from ingoread_test import cli
 from ingoread_test.config.loader import load_configs
 from ingoread_test.config.suite_config import DatasetRef, SuiteConfig
-from ingoread_test.modules import EmptyDatasetError, RunRequest, execute_run
-from ingoread_test.modules.suite_module import run_suite
+from ingoread_test.pipeline import EmptyDatasetError, RunRequest, execute_run
+from ingoread_test.pipeline.suite import run_suite
 
 runner = CliRunner()
 

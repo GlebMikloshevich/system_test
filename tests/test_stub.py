@@ -8,9 +8,9 @@ from ingoread_test.config.scorer_config import (
 )
 from ingoread_test.config.test_config import TestConfig
 from ingoread_test.dataset.models import Dataset, DocumentContainer, DocumentGT, FieldGT
+from ingoread_test.integration.runner import run_test
 from ingoread_test.integration.stub import StubIntegration, _parse_bbox
-from ingoread_test.modules.scorer_module import score
-from ingoread_test.modules.test_module import run_test
+from ingoread_test.scoring.aggregate import score
 
 
 def test_parse_bbox():

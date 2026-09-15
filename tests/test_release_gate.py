@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 
 from ingoread_test.config.test_config import HistoryConfig
-from ingoread_test.modules.historical_scorer import compare_to_previous, evaluate_release_gate
+from ingoread_test.gate import compare_to_previous, evaluate_release_gate
 from ingoread_test.results.models import (
     ComparativeStatus,
     DocumentMeasurement,

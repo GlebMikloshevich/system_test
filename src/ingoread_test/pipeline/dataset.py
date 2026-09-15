@@ -1,4 +1,4 @@
-"""DatasetModule — turn a test config into the dataset a run will send.
+"""Turn a test config into the dataset a run will send.
 
 The `run` and `suite` commands both need the same thing: resolve the configured
 dataset URI (normally S3), apply the config's standing exclusions plus any

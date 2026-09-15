@@ -1,4 +1,4 @@
-"""TestModule — send dataset through the integration with batched concurrency."""
+"""Drive an integration over a whole dataset with batched concurrency."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from dataclasses import dataclass
 
 from ..config.test_config import TestConfig
 from ..dataset.models import Dataset, DocumentContainer
-from ..integration.base import Integration
-from ..integration.schemas import IngoreadFileResult, IngoreadStatus
+from .base import Integration
+from .schemas import IngoreadFileResult, IngoreadStatus
 
 
 @dataclass

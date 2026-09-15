@@ -1,4 +1,4 @@
-"""Integration interface — what TestModule talks to."""
+"""Integration interface — what the runner talks to."""
 
 from __future__ import annotations
 

@@ -13,9 +13,9 @@ from ingoread_test.config.scorer_config import (
 from ingoread_test.config.test_config import TestConfig
 from ingoread_test.dataset import load_dataset
 from ingoread_test.dataset.models import FieldGT, gt_to_boxes, gt_to_text
+from ingoread_test.integration.runner import run_test
 from ingoread_test.integration.stub import StubIntegration
-from ingoread_test.modules.scorer_module import score
-from ingoread_test.modules.test_module import run_test
+from ingoread_test.scoring.aggregate import score
 
 
 @pytest.mark.parametrize(

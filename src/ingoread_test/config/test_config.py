@@ -1,4 +1,4 @@
-"""TestConfig — knobs for the TestModule run."""
+"""TestConfig — knobs for one test run: dataset, integration, gate, results."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""VisualizationModule — a styled, self-contained HTML report.
+"""A styled, self-contained HTML report.
 
 No external assets: all CSS is inlined so the file opens anywhere. The report
 summarizes the run, the release outcome, per-document-type field metrics, any
